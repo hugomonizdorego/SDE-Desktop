@@ -1,6 +1,6 @@
 # Debrun, the installer of downloaded Debian packages
 
-Debrun (command `debrun`, icon `debrun`, package `sde`) installs Debian
+Debrun (command `debrun`, icon `debrun`, package `sde-core`) installs Debian
 packages (`.deb` files) that were downloaded from the website of their
 makers — web browsers, editors, chat and video programs often come this
 way — the way Debian installs packages: APT installs the package together
@@ -83,7 +83,7 @@ starts the application through its launcher.
 **Remove…** (in the Package card, for an installed package of the same
 name) asks first, naming the packages removed with it (APT's simulation
 of the removal), then removes it with `apt-get remove`. SDE's own packages
-(`sde`, `sde-desktop`, `merkadu`) and essential or protected packages are
+(`sde-core`, `sde-desktop`, `sde`, `merkadu`) and essential or protected packages are
 never removed by Debrun.
 
 Errors are sentences, not exit codes: a package for another architecture

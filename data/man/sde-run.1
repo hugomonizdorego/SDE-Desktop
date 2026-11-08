@@ -5,12 +5,21 @@ sde-run \- run command dialog
 .SH SYNOPSIS
 .B sde-run
 [\-\-version]
+.br
+.B sde-run \-\-terminal
+[\fIDIRECTORY\fR]
 .SH DESCRIPTION
 \fBsde-run\fR asks for a command and starts it without a shell (Alt+F2).
 .SH OPTIONS
 .TP
 .B \-\-version
 Print the version and exit.
+.TP
+.B \-\-terminal \fR[\fIDIRECTORY\fR]
+Open the terminal chosen in Control Center > Default Applications
+([applications] terminal in sde.conf), else \fBx-terminal-emulator\fR (GNOME
+Terminal with the sde-desktop package), in \fIDIRECTORY\fR or the home
+folder, without showing the dialog. Ctrl+Alt+T runs it.
 .SH FILES
 .TP
 .I /etc/xdg/sde/sde.conf

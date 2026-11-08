@@ -98,8 +98,10 @@ bool open_terminal(const std::vector<std::string> &argv, const std::string &work
       if (spawn_detached(cmd, work_dir.empty() ? home_dir() : work_dir)) return true;
     }
   }
-  static const char *terminals[] = {"x-terminal-emulator", "xfce4-terminal", "lxterminal",
-                                    "qterminal", "mate-terminal", "gnome-terminal",
+  // GNOME Terminal is SDE's terminal (package sde-desktop); Debian's
+  // x-terminal-emulator points to it unless the administrator chose another.
+  static const char *terminals[] = {"x-terminal-emulator", "gnome-terminal", "xfce4-terminal",
+                                    "lxterminal", "qterminal", "mate-terminal",
                                     "konsole", "xterm"};
   for (const char *t : terminals) {
     if (find_program(t).empty()) continue;

@@ -1,0 +1,12 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+set -e
+if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
+    update-alternatives --remove x-session-manager /usr/bin/startsde
+fi
+# The fingerprint profiles leave the PAM stacks before their files go.
+if [ "$1" = "remove" ] && command -v pam-auth-update >/dev/null 2>&1; then
+    pam-auth-update --package --remove sde-fingerprint-sign-in sde-fingerprint-admin
+fi
+#DEBHELPER#
+exit 0

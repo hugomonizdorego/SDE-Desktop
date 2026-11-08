@@ -1,14 +1,17 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds the SDE Debian package (.deb) from this source tree.
+# Builds the SDE Debian packages (.deb) from this source tree.
 #
 #   tools/build-deb.sh [--suffix SUFFIX] [output-dir]
 #
 # --suffix adds a distribution tag to the package version, e.g. "deb12"
 # gives 0.1.0~alpha2+deb12 (used for the per-distribution release builds).
 #
-# The package lands in output-dir (default: ./dist). Install it with
-#   sudo apt install ./dist/sde_*.deb ./dist/sde-desktop_*.deb ./dist/debion-desktop-base_*.deb
+# The packages land in output-dir (default: ./dist): sde-core, one package
+# per application, the sde-desktop metapackage, the transitional sde,
+# debion-desktop-base and the -dbgsym debug symbols (docs/PACKAGING.md).
+# Install the desktop with (debion-desktop-base is DebION's, optional)
+#   sudo apt install $(ls ./dist/*.deb | grep -v -e -dbgsym_ -e /debion-desktop-base_)
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -27,10 +30,11 @@ command -v dpkg-buildpackage >/dev/null 2>&1 || {
     exit 1
 }
 
-echo "Building sde $VERSION with native application forks"
-# Download/verify sources before dpkg-buildpackage. Native compilation itself
-# has no network access and never installs upstream application packages.
-python3 "$ROOT/tools/prepare-native-suite.py"
+echo "Building the SDE $VERSION packages"
+# Download/verify sources before dpkg-buildpackage: SDE WM (Openbox) and SDE
+# compositor (picom). The build itself has no network access and never
+# installs upstream application packages. (The native suite of GTK forks
+# ended with Liria's Caja fork in 0.2.0 Alpha 4.)
 python3 "$ROOT/tools/prepare-components.py"
 # SDE Graphite/Fluent/Glass sources (suite/themes.lock.json); built with sassc.
 python3 "$ROOT/tools/prepare-themes.py"
@@ -63,9 +67,18 @@ find "$WORK/sde-$VERSION" -type f -name sde-launcher-entry-fixture -exec cp '{}'
 find "$WORK/sde-$VERSION" -type f -name sde-fake-fprintd -exec cp '{}' "$OUT/test-tools/" \;
 # Publish complete corresponding sources beside the binaries, including all
 # patched upstream trees, submodules, copyright notices and build scripts.
+# The package build trees (debian/<package>, debian/tmp, debian/.debhelper)
+# are build output, not source.
+staging="--exclude=*/debian/tmp --exclude=*/debian/.debhelper"
+for p in $(sed -n 's/^Package: *//p' "$WORK/sde-$VERSION/debian/control"); do
+    staging="$staging --exclude=*/debian/$p --exclude=*/debian/$p-dbgsym"
+done
+set -f
+# shellcheck disable=SC2086
 tar -C "$WORK" --exclude='*/obj-*' --exclude='*/build' --exclude='*/target' \
-    --exclude='*/__pycache__' --exclude='*/debian/.debhelper' --exclude='*/debian/sde' \
-    --exclude='*/debian/sde-desktop' --exclude='*/debian/debion-desktop-base' --exclude='*/debian/sde-dbgsym' --exclude='*/release/*.deb' -cJf "$OUT/sde-native-sources_${VERSION}${SUFFIX:+-$SUFFIX}.tar.xz" "sde-$VERSION"
+    --exclude='*/__pycache__' $staging --exclude='*/release/*.deb' \
+    -cJf "$OUT/sde-native-sources_${VERSION}${SUFFIX:+-$SUFFIX}.tar.xz" "sde-$VERSION"
+set +f
 cp "$WORK"/*.deb "$OUT"/
 cp "$WORK"/*.buildinfo "$WORK"/*.changes "$OUT"/ 2>/dev/null || true
 (cd "$OUT" && sha256sum ./*.deb ./*sources*.tar.xz > SHA256SUMS.sha256)

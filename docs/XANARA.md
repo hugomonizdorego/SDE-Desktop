@@ -1,6 +1,6 @@
 # Xanara, the SDE PDF viewer and editor
 
-Xanara (command `xanara`, part of the `sde` package) shows PDF documents
+Xanara (command `xanara`, package `xanara`) shows PDF documents
 sharply at every zoom and edits them. Since 0.2 Alpha 3 it changes PDFs
 with its own engine: text and pictures are edited in place on the page, and
 every page, form, stamp, protection and conversion tool works without any

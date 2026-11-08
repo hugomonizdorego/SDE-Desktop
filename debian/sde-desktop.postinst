@@ -10,6 +10,23 @@ if [ "$1" = "configure" ]; then
             sed -i 's/^XSession=sde$/XSession=sde-desktop/' "$f"
         fi
     done
+
+    # GNOME Terminal is the terminal of SDE-Desktop (0.2.0 Alpha 4): the
+    # x-terminal-emulator alternative points to it, unless the administrator
+    # chose a terminal (the alternative is then in manual mode). Only on the
+    # installation and on the upgrade from an older sde-desktop, so a later
+    # "update-alternatives --auto x-terminal-emulator" is kept. SDE's own
+    # default terminal ("auto" in Control Center > Default Applications)
+    # follows the alternative.
+    if [ -z "$2" ] || dpkg --compare-versions "$2" lt 0.2.0~alpha4~; then
+        wrapper=/usr/bin/gnome-terminal.wrapper
+        query=$(update-alternatives --query x-terminal-emulator 2>/dev/null || true)
+        if printf '%s\n' "$query" | grep -qx 'Status: auto' &&
+           printf '%s\n' "$query" | grep -qx "Alternative: $wrapper" &&
+           ! printf '%s\n' "$query" | grep -qx "Value: $wrapper"; then
+            update-alternatives --set x-terminal-emulator "$wrapper"
+        fi
+    fi
 fi
 #DEBHELPER#
 exit 0

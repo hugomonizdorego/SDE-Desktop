@@ -110,7 +110,9 @@ file associations, software-center metadata and D-Bus clients keep working:
 * the GSettings schema `org.debion.session` and Liria's
   `org.debion.liria.*` schemas;
 * binary and package names (`sde-*`, `niny`, `liria`, `xanara`, `taca`,
-  `calculator`, `sde`, `sde-desktop`, `debion-desktop-base`) and the icon
+  `calculator`, `merkadu`, `sde-core`, `sde-calculator`, `sde-photo`,
+  `sde-gallery`, `sde-desktop`, the transitional `sde`,
+  `debion-desktop-base`) and the icon
   compatibility names `sdeview` and `org.debion.Calculator`.
 
 The AppStream `<developer>` id is `io.github.hugomonizdorego`: the

@@ -305,8 +305,8 @@ fonts, drivers) and for people who know Synaptic:
 
 **What cannot be removed.** Packages the system needs are never removed:
 Essential packages, Priority required packages and the running kernel's
-package. Neither are SDE's own packages (`sde`, `sde-desktop`, `merkadu`
-and `[Uninstall] protected=`). Their Mark for Removal is not offered (the
+package. Neither are SDE's own packages (`sde-core`, `sde-desktop`, the
+transitional `sde`, `merkadu` and `[Uninstall] protected=`). Their Mark for Removal is not offered (the
 page says why), and a review whose removals would take one of them away
 cannot be applied: it names the package and the reason ("part of the base
 system: the computer may not start or work without it", "removed together
@@ -595,8 +595,8 @@ and Merkadu shows a small window instead of the main one:
 Exit status: **0** the app was removed, **1** it could not be removed or
 Merkadu refused (the error is shown first), **2** the user cancelled.
 
-Refusals, explained in the window: launchers of SDE's own packages (`sde`,
-`sde-desktop`, `merkadu`, plus `[Uninstall] protected=` of the
+Refusals, explained in the window: launchers of SDE's own packages
+(`sde-core`, `sde-desktop`, `sde`, `merkadu`, plus `[Uninstall] protected=` of the
 configuration) are installed and removed with the desktop, not on their own;
 packages the system needs (Essential, Priority required, the running kernel)
 are not removed; an app whose removal would also remove one of them (for
@@ -806,7 +806,7 @@ file instead of all of them.
     name=Merkadu
 
     [Uninstall]
-    # packages never removed besides sde, sde-desktop, merkadu and the
+    # packages never removed besides sde-core, sde-desktop, sde, merkadu and the
     # packages the system needs
     protected=
 
@@ -969,8 +969,8 @@ archive and Flathub (see `.github/workflows/build.yml`):
 ## Packaging
 
 The Debian source builds a separate binary package `merkadu` (Depends:
-`sde`, `packagekit`, `appstream`, `flatpak`, `curl`; Suggests: `snapd`);
-`sde-desktop` recommends it. It installs the conffile
+`packagekit`, `appstream`, `flatpak`, `curl`; Recommends: `sde-core`;
+Suggests: `snapd`); `sde-desktop` depends on it (docs/PACKAGING.md). It installs the conffile
 `/etc/apt/apt.conf.d/60merkadu` (the DEP-11 icon archives) and
 `/usr/share/merkadu/flathub.flatpakrepo`, and its `postinst` sets up
 Flathub ([above](#flathub)). `debian/rules` gives every path containing

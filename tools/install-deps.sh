@@ -16,7 +16,7 @@ BUILD_DEPS="$BUILD_DEPS libapt-pkg-dev"
 BUILD_DEPS="$BUILD_DEPS libpoppler-glib-dev libqpdf-dev libharfbuzz-dev libfreetype-dev libcups2-dev libtesseract-dev libleptonica-dev"
 RUNTIME_DEPS="gsettings-desktop-schemas librsvg2-common dbus-x11 xdg-utils xdg-user-dirs x11-utils
 x11-xserver-utils x11-xkb-utils xinput fonts-dejavu-core xterm
-packagekit packagekit-tools python3-apt mate-desktop-common zip unzip 7zip bzip2 xz-utils gpgv"
+packagekit packagekit-tools python3-apt zip unzip 7zip bzip2 xz-utils gpgv"
 OPTIONAL_DEPS="papirus-icon-theme adwaita-icon-theme network-manager bluez blueman
 pulseaudio-utils libglib2.0-bin libnotify-bin libfuse2t64 fuse3"
 PREVIEW_DEPS="xvfb xdotool imagemagick x11-apps pulseaudio"

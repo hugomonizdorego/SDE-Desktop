@@ -66,7 +66,16 @@ jobs:
         run: sh tools/build-deb.sh dist
       - name: Install and smoke test
         run: |
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb ./dist/merkadu_*.deb
+          # SDE Core, every application package and the transitional sde
+          # (docs/PACKAGING.md); sde-desktop is resolved below, debion-desktop-base
+          # comes later and the -dbgsym packages are not needed.
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            $(ls ./dist/*.deb | grep -v -e '-dbgsym_' -e '/sde-desktop_' -e '/debion-desktop-base_')
+          # Each program comes from its own package.
+          for pair in sde-core:sde-session sde-core:sde-panel sde-core:sde-wm liria:liria xanara:xanara niny:niny \
+                      merkadu:merkadu sde-calculator:calculator taca:taca sde-photo:sde-view sde-gallery:sde-gallery; do
+            test "$(dpkg-query -S "/usr/bin/${pair#*:}" | cut -d: -f1)" = "${pair%%:*}"
+          done
           for p in sde-display-settings calculator sde-wm sde-compositor sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update merkadu; do
             "$p" --version
           done
@@ -83,7 +92,12 @@ jobs:
           test "$(readlink -f /usr/share/desktop-base/active-theme)" = /usr/share/desktop-base/debion-theme
           test "$(readlink -f /usr/share/images/vendor-logos)" = /usr/share/desktop-base/debion-logos
           test -s /usr/share/plymouth/themes/debion/debion.script
-          DEBIAN_FRONTEND=noninteractive apt-get install --simulate --no-install-recommends ./dist/sde-desktop_*.deb ./dist/debion-desktop-base_*.deb
+          # The metapackage: GNOME Terminal, LightDM and Slick Greeter come with it.
+          DEBIAN_FRONTEND=noninteractive apt-get install --simulate --no-install-recommends ./dist/sde-desktop_*.deb ./dist/debion-desktop-base_*.deb \
+            | tee /tmp/sde-desktop-simulation.txt
+          for p in gnome-terminal lightdm slick-greeter; do
+            grep -q "^Inst $p " /tmp/sde-desktop-simulation.txt || dpkg-query -W -f='${db:Status-Abbrev}' "$p" | grep -q '^ii'
+          done
       # Merkadu with the real archive and Flathub (docs/MERKADU.md): the
       # merkadu package set up Flathub; the package lists bring the archive's
       # AppStream catalog with its icons (appstream's APT hook, Merkadu's
@@ -198,11 +212,15 @@ jobs:
           {
             echo "Automatic build of \`$GITHUB_SHA\` (SDE $version, Debian testing, amd64)."
             echo
-            echo "This is alpha software for testing. Install the packages with:"
+            echo "This is alpha software for testing. SDE Core (\`sde-core\`), each application"
+            echo "(\`liria\`, \`xanara\`, \`niny\`, \`merkadu\`, \`sde-calculator\`, \`taca\`, \`sde-photo\`,"
+            echo "\`sde-gallery\`) and the \`sde-desktop\` metapackage are packages of their own; \`sde\`"
+            echo "is the transitional package for upgrades and the \`-dbgsym\` packages hold debug symbols."
+            echo "Download the packages into an empty folder and install them with:"
             echo
             echo '```sh'
             echo 'sha256sum -c SHA256SUMS --ignore-missing'
-            echo 'sudo apt install ./sde_*.deb ./sde-desktop_*.deb ./merkadu_*.deb'
+            echo "sudo apt install \$(ls ./*.deb | grep -v -e -dbgsym_ -e /debion-desktop-base_)"
             echo '# DebION GNU/Linux integration (optional, a separate project):'
             echo 'sudo apt install ./debion-desktop-base_*.deb'
             echo '```'

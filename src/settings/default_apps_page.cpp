@@ -299,6 +299,9 @@ std::string current_terminal() {
     target = next;
   }
   std::string prog = basename_of(target);
+  // Debian's alternative points to the terminal's wrapper for the xterm
+  // options (gnome-terminal.wrapper, xfce4-terminal.wrapper ...).
+  if (ends_with(prog, ".wrapper")) prog.resize(prog.size() - 8);
   if (prog.empty()) return "";
   for (auto &a : installed_apps()) {
     if (std::find(a.categories.begin(), a.categories.end(), "TerminalEmulator") == a.categories.end()) continue;

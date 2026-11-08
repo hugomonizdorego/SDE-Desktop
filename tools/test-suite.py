@@ -11,7 +11,8 @@ binary=args.bin_dir.resolve()
 apps=['niny','liria','xanara','taca','sde-view','sde-system-monitor',
       'sde-power','sde-lock','calculator','sde-display-settings','sde-wm','sde-compositor']
 helper=(binary/'sde-suite').read_bytes()
-NATIVE={'sde-system-monitor','xanara','taca','sde-view','niny','sde-power','sde-lock','calculator'}
+# 0.2.0 Alpha 4: Liria is an SDE program too (its Caja fork is gone).
+NATIVE={'sde-system-monitor','xanara','taca','sde-view','niny','sde-power','sde-lock','calculator','liria'}
 for name in apps:
     path=binary/name
     assert path.is_file() and not path.is_symlink(),name
@@ -48,18 +49,6 @@ for name in ['niny','liria','xanara','taca','sde-view','sde-system-monitor','sde
     assert versions[name] in output,(name,output,versions[name])
 subprocess.run(['visudo','-cf','/etc/sudoers.d/sde-liria'],check=True)
 
-# Liria (alpha16): SDE branding where users see it. Legal notices of the
-# original authors are allowed (see tools/liria-branding-check.py).
-liria_version=subprocess.check_output([str(binary/'liria'),'--version'],text=True)
-assert liria_version.startswith('Liria '),liria_version
-subprocess.run([sys.executable,str(Path(__file__).resolve().parent/'liria-branding-check.py'),
-                '--prefix',str(binary.parent)],check=True)
-# dh_compress gzips larger files under /usr/share/doc (not copyright).
-caja_docs=binary.parent/'share/doc/sde/upstream/caja'
-for doc in ['COPYING','AUTHORS','copyright']:
-    assert (caja_docs/doc).is_file() or (caja_docs/(doc+'.gz')).is_file(),doc
-assert (binary.parent/'share/liria/help/index.html').is_file()
-
 # Software Updater (sde-update) streams PackageKit transactions through pkcon; without pkcon
 # (PackageKit 1.4 ships only pkgcli) it uses APT through pkexec.
 if os.access('/usr/bin/pkcon',os.X_OK):
@@ -75,7 +64,15 @@ assert subprocess.run([str(binary/'sde-update'),'--plan','invalid']).returncode=
 for upstream in ['pluma','caja','atril','engrampa','eom','mate-system-monitor','mate-session-manager','openbox','picom']:
     result=subprocess.run(['dpkg-query','-W','-f=${db:Status-Abbrev}',upstream],capture_output=True,text=True)
     assert not result.stdout.startswith('ii'), 'Original application must not be installed: '+upstream
-files=subprocess.check_output(['dpkg-query','-L','sde'],text=True).splitlines()
+# 0.2.0 Alpha 4: SDE Core and one package per application (docs/PACKAGING.md).
+owners={'sde-session':'sde-core','sde-panel':'sde-core','sde-settings':'sde-core','sde-wm':'sde-core',
+        'sde-compositor':'sde-core','sde-system-monitor':'sde-core','sde-update':'sde-core','liria':'liria',
+        'xanara':'xanara','niny':'niny','merkadu':'merkadu','calculator':'sde-calculator','taca':'taca',
+        'sde-view':'sde-photo','sde-gallery':'sde-gallery'}
+for program,package in owners.items():
+    owner=subprocess.check_output(['dpkg-query','-S',str(binary/program)],text=True).split(':')[0]
+    assert owner==package,(program,owner,package)
+files=subprocess.check_output(['dpkg-query','-L',*sorted(set(owners.values()))],text=True).splitlines()
 for path in files:
     assert not path.endswith(('/mime.cache','/mimeinfo.cache','/icon-theme.cache','/gschemas.compiled')),path
 print('Native ELF executables, metadata, transaction plans and absence of original MATE apps passed.')

@@ -182,6 +182,73 @@ if(SDE_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
+# ------------------------------------------------------ application packages
+# SDE Core and one Debian package per application (docs/PACKAGING.md): the
+# install() rules of an application name its package with COMPONENT, and its
+# data files are listed here with sde_app_data(), which takes them out of the
+# shared rules below. Everything installed without a COMPONENT (CMake's
+# "Unspecified") is SDE Core, package sde-core. debian/rules installs each
+# component into its package and stops when a file would be in none.
+#   sde_app_data(<package> [DESKTOP <id>...] [METAINFO <file>...] [MAN <page>...]
+#                [ICONS <name>...])
+# DESKTOP: data/applications (/usr/share/applications and SDE's copy),
+# METAINFO: data/metainfo, MAN: data/man (section 1), ICONS: every size of
+# data/icons/hicolor/*/apps/<name>.*.
+function(sde_app_data package)
+  cmake_parse_arguments(APP "" "" "DESKTOP;METAINFO;MAN;ICONS" ${ARGN})
+  set(_names ${APP_DESKTOP} ${APP_METAINFO} ${APP_MAN})
+  foreach(_id ${APP_DESKTOP})
+    install(FILES data/applications/${_id} DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT ${package})
+    install(FILES data/applications/${_id} DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/applications
+            COMPONENT ${package})
+  endforeach()
+  foreach(_file ${APP_METAINFO})
+    install(FILES data/metainfo/${_file} DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo COMPONENT ${package})
+  endforeach()
+  foreach(_page ${APP_MAN})
+    install(FILES data/man/${_page} DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 COMPONENT ${package})
+  endforeach()
+  foreach(_icon ${APP_ICONS})
+    file(GLOB _paths RELATIVE "${PROJECT_SOURCE_DIR}/data/icons" CONFIGURE_DEPENDS
+         "${PROJECT_SOURCE_DIR}/data/icons/hicolor/*/apps/${_icon}.*")
+    if(NOT _paths)
+      message(FATAL_ERROR "sde_app_data(${package}): no icon data/icons/hicolor/*/apps/${_icon}.*")
+    endif()
+    foreach(_path ${_paths})
+      get_filename_component(_dir "${_path}" DIRECTORY)
+      get_filename_component(_name "${_path}" NAME)
+      install(FILES data/icons/${_path} DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/${_dir} COMPONENT ${package})
+      list(APPEND _names ${_name})
+    endforeach()
+  endforeach()
+  set_property(GLOBAL APPEND PROPERTY SDE_APP_DATA_FILES ${_names})
+endfunction()
+sde_app_data(liria DESKTOP liria.desktop METAINFO org.debion.Liria.metainfo.xml MAN liria.1 ICONS liria)
+sde_app_data(xanara DESKTOP xanara.desktop METAINFO org.debion.Xanara.metainfo.xml MAN xanara.1 ICONS xanara)
+sde_app_data(niny DESKTOP niny.desktop METAINFO org.debion.Niny.metainfo.xml MAN niny.1 ICONS niny)
+sde_app_data(merkadu DESKTOP merkadu.desktop METAINFO org.debion.Merkadu.metainfo.xml MAN merkadu.1 ICONS merkadu)
+sde_app_data(sde-calculator DESKTOP org.debion.Calculator.desktop METAINFO org.debion.Calculator.metainfo.xml
+             MAN calculator.1 ICONS org.debion.Calculator sde-calculator)
+sde_app_data(taca DESKTOP taca.desktop METAINFO org.debion.Taca.metainfo.xml MAN taca.1 ICONS taca)
+sde_app_data(sde-photo DESKTOP sde-view.desktop METAINFO org.debion.Photo.metainfo.xml MAN sde-view.1
+             ICONS sde-photo sdeview)
+sde_app_data(sde-gallery DESKTOP sde-gallery.desktop METAINFO org.debion.Gallery.metainfo.xml MAN sde-gallery.1
+             ICONS sde-gallery)
+get_property(_sde_app_files GLOBAL PROPERTY SDE_APP_DATA_FILES)
+set(SDE_APP_DATA_EXCLUDE "")
+foreach(_name ${_sde_app_files})
+  list(APPEND SDE_APP_DATA_EXCLUDE PATTERN "${_name}" EXCLUDE)
+endforeach()
+# The install components, for debian/rules: written once every directory
+# has been read, so that rules added anywhere are counted.
+function(sde_write_install_components)
+  get_cmake_property(_components COMPONENTS)
+  list(SORT _components)
+  string(REPLACE ";" "\n" _components "${_components}")
+  file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/install-components.txt" CONTENT "${_components}\n")
+endfunction()
+cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL sde_write_install_components)
+
 # ---------------------------------------------------------------- data files
 install(PROGRAMS data/startsde DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES data/sde-mimeapps.list DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg)
@@ -192,8 +259,7 @@ install(FILES docs/ALPHA9.md docs/ALPHA10.md docs/ALPHA11.md docs/ALPHA12.md doc
         DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)
 install(FILES data/xsessions/sde-desktop.desktop data/xsessions/sde.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/xsessions)
 install(FILES data/sde.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/sde)
-install(FILES data/schemas/org.debion.session.gschema.xml data/schemas/30_sde-suite.gschema.override
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/glib-2.0/schemas)
+install(FILES data/schemas/org.debion.session.gschema.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/glib-2.0/schemas)
 install(FILES data/openbox/rc.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/openbox)
 # SDE themes: SDE Graphite (default), SDE Fluent and SDE Glass, built from
 # data/themes/palettes.json and the pinned upstream sources that
@@ -236,29 +302,33 @@ install(FILES "${CMAKE_BINARY_DIR}/build-history.json" DESTINATION ${CMAKE_INSTA
 install(DIRECTORY "${SDE_THEMES_OUT}/" DESTINATION ${CMAKE_INSTALL_DATADIR}/themes PATTERN ".stamp" EXCLUDE)
 install(FILES data/themes/palettes.json suite/themes.lock.json DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/themes)
 install(DIRECTORY data/backgrounds/ DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/sde)
-install(DIRECTORY data/icons/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons)
+install(DIRECTORY data/icons/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons ${SDE_APP_DATA_EXCLUDE})
 # Branding (docs/BRANDING.md): the SDE logo for About windows, Welcome and the
 # login screen, and the sample user pictures offered by the avatar picker.
 install(DIRECTORY data/branding/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/branding)
 install(DIRECTORY data/avatars/ DESTINATION ${CMAKE_INSTALL_DATADIR}/Avatar FILES_MATCHING PATTERN "*.png")
 install(DIRECTORY data/welcome/ DESTINATION ${CMAKE_INSTALL_DATADIR}/SDE-Welcome)
-install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/applications ${SDE_APP_DATA_EXCLUDE})
 # AppStream: every SDE program names the Selviana DE Project as its developer.
-install(DIRECTORY data/metainfo/ DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo FILES_MATCHING PATTERN "*.metainfo.xml")
+install(DIRECTORY data/metainfo/ DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo FILES_MATCHING PATTERN "*.metainfo.xml"
+        ${SDE_APP_DATA_EXCLUDE})
 file(GLOB SDE_MANPAGES CONFIGURE_DEPENDS data/man/*.1)
+foreach(_name ${_sde_app_files})
+  list(REMOVE_ITEM SDE_MANPAGES "${PROJECT_SOURCE_DIR}/data/man/${_name}")
+endforeach()
 install(FILES ${SDE_MANPAGES} DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 
 install(FILES data/compositor/sde.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/compositor)
 install(FILES data/legal/components.json DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/legal)
 install(FILES docs/LEGAL.md DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)
 install(FILES data/sudoers/sde-liria DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/sudoers.d
-        PERMISSIONS OWNER_READ GROUP_READ)
+        PERMISSIONS OWNER_READ GROUP_READ COMPONENT liria)
 
-install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/applications)
+install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/applications ${SDE_APP_DATA_EXCLUDE})
 install(FILES data/portals/sde-portals.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/xdg-desktop-portal)
 
 # Photo and Gallery (docs/PHOTO.md, docs/GALLERY.md): their example action
 # plugins and the offline list of places of the Places plugin (Natural Earth).
-install(DIRECTORY data/photo/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/photo)
-install(DIRECTORY data/gallery/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/gallery)
+install(DIRECTORY data/photo/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/photo COMPONENT sde-photo)
+install(DIRECTORY data/gallery/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/gallery COMPONENT sde-gallery)
 install(FILES docs/PHOTO.md docs/GALLERY.md DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)

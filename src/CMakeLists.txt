@@ -302,6 +302,7 @@ add_executable(sde-gallery
   gallery/batch.cpp)
 # Batch rotate/export use Photo's encoder (lossless JPEG rotation, EXIF).
 target_link_libraries(sde-gallery PRIVATE sde-gallery-ui sde-photo-core)
+install(TARGETS sde-gallery RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT sde-gallery)
 
 # Photo (sde-view): the SDE photo viewer and editor, written from scratch by
 # the Selviana DE Project on top of sde-gallery-core.
@@ -320,7 +321,7 @@ add_executable(sde-view
   photo/tools.cpp
   photo/effects.cpp)
 target_link_libraries(sde-view PRIVATE sde-photo-core sde-gallery-ui)
-install(TARGETS sde-view RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS sde-view RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT sde-photo)
 # Its icon (sde-photo, and sdeview for older launchers) is in data/icons.
 
 # Xanara: the SDE document viewer and PDF editor, written from scratch by
@@ -405,7 +406,7 @@ add_executable(xanara
 # Printing through libcups (no lp program).
 find_package(Cups REQUIRED)
 target_link_libraries(xanara PRIVATE sde-xanara-core Cups::Cups)
-install(TARGETS xanara RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS xanara RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT xanara)
 
 # Taca: the SDE archive manager, written from scratch by the Selviana DE Project.
 # The archive engine is a separate library for the unit tests (no display).
@@ -429,7 +430,7 @@ add_executable(taca
   taca/bars.cpp
   taca/wizard.cpp)
 target_link_libraries(taca PRIVATE taca-core)
-install(TARGETS taca RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS taca RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT taca)
 
 # Native suite applications report their own version from suite/versions.json.
 function(sde_app_version target id)
@@ -444,7 +445,7 @@ sde_app_version(taca taca)
 sde_app_version(sde-view sde-view)
 
 install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd sde-update
-        sde-xsettingsd sde-gallery
+        sde-xsettingsd
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Calculator: native from-scratch SDE application (Selviana DE Project) that
@@ -464,7 +465,7 @@ add_executable(calculator
   calculator/keys.cpp)
 target_link_libraries(calculator PRIVATE calculator-core)
 sde_app_version(calculator calculator)
-install(TARGETS calculator RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS calculator RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT sde-calculator)
 
 # SDE System Monitor: native from-scratch rewrite (Selviana DE Project).
 # The /proc and /sys parsers live in a small library shared with the tests.

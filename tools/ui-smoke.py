@@ -851,17 +851,17 @@ try:
         if page == "suite" and args.scale == 100:
             # The first suite application's source and copyright buttons,
             # found by their tooltips (alpha 2: a Merkadu card above them
-            # moved them).
+            # moved them). Since 0.2.0 Alpha 4 Niny is the package niny.
             click_control(settings, "Control Center", "https://github.com/hugomonizdorego/SDE-Desktop")
             time.sleep(0.3)
             assert (
                 home / "opened-uri"
             ).read_text().strip() == "https://github.com/hugomonizdorego/SDE-Desktop"
-            click_control(settings, "Control Center", "/usr/share/doc/sde/copyright")
+            click_control(settings, "Control Center", "/usr/share/doc/niny/copyright")
             time.sleep(0.3)
             assert (
                 home / "opened-uri"
-            ).read_text().strip() == "/usr/share/doc/sde/copyright"
+            ).read_text().strip() == "/usr/share/doc/niny/copyright"
         run(
             "xdotool",
             "mousemove",

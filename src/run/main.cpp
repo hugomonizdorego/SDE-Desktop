@@ -161,7 +161,10 @@ int main(int argc, char **argv) {
   sde::set_default_window_icon({"sde-run"});  // title bar and taskbar
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--version")) return print_version(app_info());
-    printf("Usage: sde-run [--version]\n");
+    // Ctrl+Alt+T (data/openbox/rc.xml): the terminal of Control Center >
+    // Default Applications, else x-terminal-emulator; no window of its own.
+    if (!strcmp(argv[i], "--terminal")) return open_terminal({}, i + 1 < argc ? argv[i + 1] : "") ? 0 : 1;
+    printf("Usage: sde-run [--version] [--terminal [DIRECTORY]]\n");
     return strcmp(argv[i], "--help") ? 2 : 0;
   }
   fl_open_display();

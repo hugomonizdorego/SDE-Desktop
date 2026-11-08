@@ -17,8 +17,11 @@ Build-Depends: debhelper-compat (= 13),
                libjpeg-dev,
                zlib1g-dev,
                libpolkit-agent-1-dev,
+               libpolkit-gobject-1-dev,
                libcairo2-dev,
                librsvg2-dev,
+               libglib2.0-dev,
+               libgdk-pixbuf-2.0-dev,
                libx11-dev,
                libxft-dev,
                libdbus-1-dev,
@@ -30,45 +33,17 @@ Build-Depends: debhelper-compat (= 13),
                x11-xserver-utils,
                autoconf,
                automake,
-               autoconf-archive,
                libtool,
                libtool-bin,
                autopoint,
-               intltool,
-               mate-common,
-               gtk-doc-tools,
-               yelp-tools,
-               xsltproc,
-               docbook-xsl,
-               gobject-introspection,
-               libgirepository1.0-dev,
-               polkitd,
-               libpolkit-gobject-1-dev,
                libgtk-3-dev,
-               libgail-3-dev,
-               libgtksourceview-4-dev,
-               libenchant-2-dev,
-               iso-codes,
-               libmate-desktop-dev (>= 1.27.1),
-               libpeas-dev,
-               libgtop2-dev,
-               libsystemd-dev,
-               libwnck-3-dev,
                libxml2-dev,
-               libxml2-utils,
                libappstream-dev (>= 1.0),
                libflatpak-dev (>= 1.12),
                libapt-pkg-dev,
                libexif-dev,
-               libexempi-dev,
                libpoppler-glib-dev,
-               libsynctex-dev,
-               libspectre-dev,
-               libdjvulibre-dev,
-               libtiff-dev,
                libarchive-dev,
-               libjson-glib-dev,
-               libnotify-dev,
                libpam0g-dev,
                libcrypt-dev,
                libxss-dev,
@@ -78,8 +53,6 @@ Build-Depends: debhelper-compat (= 13),
                libxres-dev,
                libsm-dev,
                libice-dev,
-               liblcms2-dev,
-               chrpath,
                meson,
                ninja-build,
                libxcursor-dev,
@@ -120,13 +93,12 @@ Vcs-Git: https://github.com/hugomonizdorego/SDE-Desktop.git
 Vcs-Browser: https://github.com/hugomonizdorego/SDE-Desktop
 Rules-Requires-Root: no
 
-Package: sde
+Package: sde-core
 Architecture: any
 Depends: ${shlibs:Depends},
          ${misc:Depends},
          librsvg2-common,
          adwaita-icon-theme-legacy | papirus-icon-theme,
-         mate-desktop-common,
          dbus-x11 | dbus-user-session,
          xdg-utils,
          gsettings-desktop-schemas,
@@ -140,21 +112,12 @@ Depends: ${shlibs:Depends},
          sudo,
          packagekit-tools | packagekit (>= 1.3.4),
          python3-apt,
-         python3-gi,
-         python3-gi-cairo,
-         gir1.2-peas-1.0,
-         gir1.2-gtk-3.0,
-         gir1.2-gtksource-4,
-         xterm,
-         zip,
-         unzip,
-         7zip | p7zip-full,
-         bzip2,
-         xz-utils,
+         gnome-terminal | x-terminal-emulator,
          xdg-user-dirs,
          fonts-dejavu-core | fonts-noto-core,
          gpgv | sqv
-Recommends: papirus-icon-theme | adwaita-icon-theme, cups-client, tesseract-ocr-eng,
+Recommends: papirus-icon-theme | adwaita-icon-theme,
+            cups-client,
             accountsservice,
             network-manager,
             bluez,
@@ -168,126 +131,120 @@ Recommends: papirus-icon-theme | adwaita-icon-theme, cups-client, tesseract-ocr-
             lightdm | x-display-manager,
             libfuse2t64 | libfuse2,
             fuse3 | fuse
-Suggests: eduka-icons, unrar, hunspell,
+Suggests: sde-desktop,
+          eduka-icons,
           onboard,
           brightnessctl,
           ddcutil,
           network-manager-gnome,
           scrot,
+          xterm,
           firefox-esr | firefox
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
 Provides: x-session-manager, notification-daemon
-Description: Selviana Desktop Environment - small, fast and modern desktop
+Description: Selviana Desktop Environment - SDE Core
  SDE (Selviana Desktop Environment) is a lightweight desktop environment
  developed by the Selviana DE Project, with a Rust configuration core and
- autostart helper, a C++17 interface using FLTK, cairo and Xlib, and a
+ autostart helper, a C++17 interface using SDE-FLTK, cairo and Xlib, and a
  source-built SDE WM (Openbox) and SDE compositor (picom). It is built and
  tested on Debian testing.
  .
- This 0.1 Alpha release contains:
-  * sde-session  - session manager with crash recovery, rescue dialog,
-                   XDG autostart and a system check (sde-session --check)
-  * sde-panel    - taskbar, searchable application menu, pinned launchers,
-                   quick settings (network, sound, brightness, battery),
-                   calendar, XEmbed and StatusNotifierItem tray
-  * sde-desktop  - wallpaper and desktop icons
-  * sde-notifyd  - desktop notifications with Do Not Disturb
-  * sde-settings - the Control Center (also sde-control-center): every
-                   setting by category, Users & Avatar (account picture
-                   and name), appearance, panel, Start menu, displays,
-                   sound, power, network, keyboard and mouse
-  * sde-display-settings - native monitor profiles, resolution and scale
-  * sde-run      - run command dialog (Alt+F2)
-  * sde-logout   - log out, lock, suspend, restart and shut down
-  * sde-watchdog and sde-force-close - notice programs that stop
-                   responding or never open, and offer Wait or Force Close
-  * sde-touchscreen - keeps touch screens on their display and shows
-                   touches (SDE-FLTK takes the gestures in every program)
-  * sde-power    - power manager: battery warnings, lid and power button,
-                   idle dimming and suspend, brightness keys with an OSD
-  * sde-lock     - screen locker (PAM service sde-lock) with
-                   org.freedesktop.ScreenSaver idle inhibitors
-  * sde-autostart - Rust XDG autostart launcher with a dry-run diagnostic
+ SDE Core is the desktop itself, without the applications:
+  * sde-session and startsde: the session, with crash recovery, a rescue
+    dialog, XDG autostart and a system check (sde-session --check);
+  * sde-panel: taskbar, Start menu, search, quick settings, calendar and
+    tray; sde-desktop: wallpaper and desktop icons;
+  * sde-settings (sde-control-center): the Control Center, with Users &
+    Avatar, appearance, displays, sound, power, network, keyboard and
+    mouse; sde-display-settings: monitor profiles, resolution and scale;
+  * sde-notifyd (notifications), sde-run (Alt+F2) and sde-logout (log out,
+    lock, suspend, restart and shut down);
+  * sde-power (battery, lid, idle and brightness) and sde-lock (the screen
+    locker, PAM service sde-lock);
+  * sde-core: the SDE core controller (org.selviana.Core) that connects
+    the session, the panel, the Control Center and the applications;
+  * sde-watchdog and sde-force-close: Wait or Force Close for programs
+    that stop responding;
+  * sde-touchscreen: keeps a touch screen on its own display and shows
+    touches (SDE-FLTK takes the gestures in every program);
+  * Software Updater (sde-update), Welcome, Driver Manager, System Reports,
+    SDE System Monitor, Debrun (.deb files) and sde-appimage;
+  * sde-xsettingsd, sde-polkit-agent, the file chooser portal and
+    sde-autostart;
+  * SDE WM (Openbox) and SDE compositor (picom), the SDE Graphite, Fluent
+    and Glass themes, the SDE icons, wallpapers, logo and shared data.
  .
- Select "SDE-Desktop" in your display manager to start it. This is an alpha
- release meant for testing; expect missing features.
- .
- Its own ecosystem: SDE-FLTK (the SDE fork of FLTK, linked statically),
- sde-xsettingsd and sde-polkit-agent (written from scratch), and source
- builds of SDE WM (Openbox) and SDE compositor (picom).
- .
- Applications written from scratch by the Selviana DE Project: Niny (text
- editor), Xanara (PDF viewer and editor), Taca (archive manager), Photo,
- Gallery, Calculator, SDE System Monitor, SDE Power and SDE Screen Lock. Source-built
- SDE fork: Liria (Caja).
- These executables and their resources are included in this package;
- no corresponding MATE application packages are required.
- Software Updater (sde-update) updates the operating system with an
- attributed mintupdate model and Debian PackageKit; applications from
- Flathub and the Snap Store are updated in Merkadu.
+ The applications are packages of their own: liria, xanara, niny, merkadu,
+ sde-calculator, taca, sde-photo and sde-gallery. The sde-desktop
+ metapackage installs SDE Core, every application, GNOME Terminal and the
+ login screen. Select "SDE-Desktop" in your display manager to start it.
+ This is an alpha release meant for testing; expect missing features.
 
-Package: sde-desktop
-Architecture: all
-Section: metapackages
-Depends: ${misc:Depends},
-         sde (>= ${source:Version}),
-         xserver-xorg,
-         xinit,
-         lightdm | x-display-manager,
-         network-manager,
-         bluez,
-         blueman,
-         pulseaudio-utils,
-         pipewire-pulse | pulseaudio,
-         wireplumber | pipewire-media-session,
-         xdg-desktop-portal,
-         xdg-desktop-portal-gtk,
-         gvfs,
-         gvfs-backends,
-         adwaita-icon-theme,
-         dconf-gsettings-backend,
-         upower,
-         udisks2
-Recommends: debion-desktop-base (>= ${source:Version}),
-            merkadu (>= ${source:Version}),
-            desktop-base,
-            papirus-icon-theme,
-            qt5-gtk-platformtheme,
-            qt6-gtk-platformtheme,
-            lightdm-gtk-greeter,
-            firefox-esr | firefox,
-            network-manager-gnome,
-            glib-networking,
-            ca-certificates,
-            systemd-timesyncd | time-daemon,
-            gnome-keyring,
-            libpam-gnome-keyring
-Suggests: wsdd
-Description: Selviana Desktop Environment - full desktop (metapackage)
- One installation entry point for the complete Selviana Desktop Environment:
- the SDE session and applications, display server, login manager, network
- and sound services and removable media support.
+Package: liria
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends}
+Recommends: sde-core,
+            gvfs,
+            gvfs-backends,
+            gvfs-fuse,
+            udisks2
+Suggests: sudo
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
+Description: Selviana Desktop Environment - Liria file manager
+ Liria is the file manager of the Selviana Desktop Environment (SDE),
+ written by the Selviana DE Project: it browses folders, the trash,
+ removable media and network places (through GIO and GVfs) and opens files
+ with their default applications. In SDE the desktop icons are
+ sde-desktop's, not Liria's.
  .
- It makes SDE-Desktop the default LightDM session and styles the LightDM
- GTK greeter with SDE Graphite and the login background of the active
- desktop-base theme of the installed distribution.
+ It runs on any X11 desktop; with sde-core it follows the SDE look.
+
+Package: xanara
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends}
+Recommends: sde-core,
+            tesseract-ocr-eng
+Suggests: cups
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
+Description: Selviana Desktop Environment - Xanara PDF viewer and editor
+ Xanara is the document viewer and PDF editor of the Selviana Desktop
+ Environment (SDE), written from scratch by the Selviana DE Project. It
+ shows PDF documents, edits their text, pages, images and annotations with
+ its own PDF engine (libqpdf, HarfBuzz, FreeType), fills forms, prints
+ through CUPS and recognizes scanned text with Tesseract.
  .
- SDE does not require a particular distribution. On DebION GNU/Linux the
- recommended debion-desktop-base package adds the distribution's artwork and
- network defaults; it is a separate project's package.
+ It runs on any X11 desktop; with sde-core it follows the SDE look.
+
+Package: niny
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends}
+Recommends: sde-core
+Suggests: hunspell | aspell
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
+Description: Selviana Desktop Environment - Niny text editor
+ Niny is the text editor of the Selviana Desktop Environment (SDE), written
+ from scratch by the Selviana DE Project: tabs, syntax highlighting, search
+ and replace, a Markdown preview, a command palette, encodings and spell
+ checking through hunspell or aspell.
  .
- This metapackage installs individual maintained components rather than
- another complete desktop environment. Existing user preferences and
- distribution package sources are preserved.
+ It runs on any X11 desktop; with sde-core it follows the SDE look.
 
 Package: merkadu
 Architecture: any
 Depends: ${shlibs:Depends},
          ${misc:Depends},
-         sde (= ${binary:Version}),
          packagekit,
          appstream,
          flatpak,
          curl
+Recommends: sde-core
 Suggests: snapd
 Description: Selviana Desktop Environment - software center
  Merkadu is the software center of the Selviana Desktop Environment (SDE).
@@ -312,6 +269,168 @@ Description: Selviana Desktop Environment - software center
  .
  Merkadu is based on Ubuntu Software Center. Installing and removing are
  authorized with polkit; Merkadu itself never runs as root.
+
+Package: sde-calculator
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends}
+Recommends: sde-core
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
+Description: Selviana Desktop Environment - Calculator
+ Calculator (command calculator) is the scientific calculator of the
+ Selviana Desktop Environment (SDE), written from scratch by the Selviana
+ DE Project: basic, scientific and programmer modes, a unit converter and
+ a history.
+ .
+ It runs on any X11 desktop; with sde-core it follows the SDE look.
+
+Package: taca
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends}
+Recommends: sde-core,
+            7zip | p7zip-full,
+            zip
+Suggests: unrar
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
+Description: Selviana Desktop Environment - Taca archive manager
+ Taca is the archive manager of the Selviana Desktop Environment (SDE),
+ written from scratch by the Selviana DE Project. It opens and extracts zip,
+ 7z, rar, tar (gz, bz2, xz, zst, lz4), iso, cab, deb, rpm and more through
+ libarchive, creates zip, 7z and tar archives with passwords and split
+ volumes, and refuses archives that would write outside the target folder.
+ 7-Zip adds encrypted 7z archives and unrar encrypted RAR archives.
+ .
+ It runs on any X11 desktop; with sde-core it follows the SDE look.
+
+Package: sde-photo
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends}
+Recommends: sde-core,
+            cups-client
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
+Description: Selviana Desktop Environment - Photo viewer and editor
+ Photo (command sde-view) is the photo viewer and editor of the Selviana
+ Desktop Environment (SDE), written from scratch by the Selviana DE
+ Project: it shows images and animations, crops, straightens, adjusts and
+ retouches them, draws on them, makes collages and prints them.
+ .
+ It runs on any X11 desktop; with sde-core it follows the SDE look.
+
+Package: sde-gallery
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends}
+Recommends: sde-core,
+            sde-photo,
+            cups-client
+Suggests: hugin-tools,
+          jpegoptim,
+          optipng
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
+Description: Selviana Desktop Environment - Gallery photo library
+ Gallery (command sde-gallery) is the photo library of the Selviana Desktop
+ Environment (SDE), written from scratch by the Selviana DE Project: photos
+ by date, albums and places, cameras and memory cards, duplicates, a
+ slideshow and batch rotation, export and printing. Photos open in Photo
+ (sde-photo) for editing.
+ .
+ It runs on any X11 desktop; with sde-core it follows the SDE look.
+
+Package: sde-desktop
+Architecture: all
+Section: metapackages
+Depends: ${misc:Depends},
+         sde-core (>= ${source:Version}),
+         liria (>= ${source:Version}),
+         xanara (>= ${source:Version}),
+         niny (>= ${source:Version}),
+         merkadu (>= ${source:Version}),
+         sde-calculator (>= ${source:Version}),
+         taca (>= ${source:Version}),
+         sde-photo (>= ${source:Version}),
+         sde-gallery (>= ${source:Version}),
+         gnome-terminal,
+         slick-greeter,
+         lightdm,
+         xserver-xorg,
+         xinit,
+         network-manager,
+         bluez,
+         blueman,
+         pulseaudio-utils,
+         pipewire-pulse | pulseaudio,
+         wireplumber | pipewire-media-session,
+         xdg-desktop-portal,
+         xdg-desktop-portal-gtk,
+         gvfs,
+         gvfs-backends,
+         adwaita-icon-theme,
+         dconf-gsettings-backend,
+         upower,
+         udisks2
+Recommends: lightdm-settings,
+            debion-desktop-base (>= ${source:Version}),
+            desktop-base,
+            papirus-icon-theme,
+            qt5-gtk-platformtheme,
+            qt6-gtk-platformtheme,
+            firefox-esr | firefox,
+            network-manager-gnome,
+            glib-networking,
+            ca-certificates,
+            systemd-timesyncd | time-daemon,
+            gnome-keyring,
+            libpam-gnome-keyring,
+            fprintd,
+            libpam-fprintd
+Suggests: wsdd
+Description: Selviana Desktop Environment - full desktop (metapackage)
+ One installation entry point for the complete Selviana Desktop Environment:
+ SDE Core, every SDE application (Liria, Xanara, Niny, Merkadu, Calculator,
+ Taca, Photo and Gallery), GNOME Terminal, the display server, the login
+ screen and the network, sound and removable media services.
+ .
+ The login screen is LightDM with Slick Greeter: SDE-Desktop is the
+ default session and the users are listed, without a manual login entry
+ or a guest session, in SDE Graphite with the SDE logo over the login
+ background of the active desktop-base theme (DebION's with
+ debion-desktop-base). Login Window (lightdm-settings) changes it. A Debian
+ live system starts the live user's SDE-Desktop session directly. GNOME
+ Terminal is the default terminal unless the administrator chose another
+ x-terminal-emulator.
+ .
+ SDE does not require a particular distribution. On DebION GNU/Linux the
+ recommended debion-desktop-base package adds the distribution's artwork and
+ network defaults; it is a separate project's package.
+ .
+ This metapackage installs individual maintained components rather than
+ another complete desktop environment. Existing user preferences and
+ distribution package sources are preserved.
+
+Package: sde
+Architecture: any
+Section: oldlibs
+Depends: ${misc:Depends},
+         sde-core (>= ${binary:Version}),
+         liria (>= ${binary:Version}),
+         xanara (>= ${binary:Version}),
+         niny (>= ${binary:Version}),
+         sde-calculator (>= ${binary:Version}),
+         taca (>= ${binary:Version}),
+         sde-photo (>= ${binary:Version}),
+         sde-gallery (>= ${binary:Version})
+Description: Selviana Desktop Environment - transitional package
+ SDE 0.2.0 Alpha 4 split the sde package into SDE Core (sde-core) and one
+ package per application (liria, xanara, niny, sde-calculator, taca,
+ sde-photo and sde-gallery). This transitional package installs them on
+ upgrades from older versions and can be removed afterwards. The complete
+ desktop is the sde-desktop package.
 
 Package: debion-desktop-base
 Architecture: all
