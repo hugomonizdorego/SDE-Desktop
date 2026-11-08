@@ -362,7 +362,7 @@ are removed); a picture under 64 × 64 or not square is used with a word
 about it. The preview is drawn with the panel's own layout
 (`src/common/start_button.*`) at the panel's size. **Reset to Default**
 removes the three keys and the stored picture. The panel follows every
-change at once; the logo and "SDE" keep the size of 0.2.0 Alpha 3.1. The
+change at once; the logo and "SDE" keep the size of 0.2.0 Alpha 3.1 (within 2 pixels). The
 QA dump has `@start-style:`, `@start-label:` and `@start-icon:` (`default`,
 `none` or the picture's path).
 

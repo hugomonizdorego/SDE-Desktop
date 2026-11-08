@@ -77,7 +77,7 @@ Layout layout(const Settings &s, int icon, int text_w, double unit) {
   Layout l;
   // The button: S(6) from the slot's left edge, S(2) to its right; inside it
   // S(10) of padding on both sides and S(6) between the icon and the text.
-  // The logo and "SDE" keep the size of 0.2.0 Alpha 3.1 (H + 45 at 100 %).
+  // The logo and "SDE" keep the size of 0.2.0 Alpha 3.1 (H + 46 at 100 %) within 2 px.
   int inner = (show_icon ? icon : 0) + (show_icon && show_text ? px(6) : 0) + text_w;
   l.box_x = px(6);
   l.box_w = px(10) + inner + px(10);
