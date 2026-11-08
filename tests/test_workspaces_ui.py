@@ -248,7 +248,17 @@ def control_center(t):
 
 def taskbar(t, a, b):
     """3. The taskbar follows the workspace in view."""
-    t.spawn('sde-panel', log='panel.log')
+    panel = t.spawn('sde-panel', log='panel.log')
+    try:
+        taskbar_checks(t, a, b)
+    finally:
+        # The Start menu of an unpatched window manager would take the keys
+        # of the next checks (Win opens it on press there).
+        panel.terminate()
+        panel.wait(5)
+
+
+def taskbar_checks(t, a, b):
     def tasks():
         return [line.split('\t')[0] for line in t.qa('SDE-Panel.txt').splitlines() if line.startswith('task:')]
     if not check(bool(wait(lambda: t.qa('SDE-Panel.txt'), 20)), 'the panel starts'):

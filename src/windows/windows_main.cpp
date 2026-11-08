@@ -404,19 +404,24 @@ int write_openbox_config(const std::string &path) {
   return 0;
 }
 
-int print_shortcuts(bool openbox) {
+int print_shortcuts(bool openbox, bool groups = false) {
   Config cfg;
   cfg.load();
+  if (groups) {
+    for (const auto &g : shortcuts::groups()) printf("%s\t%s\n", g.id, _(g.title));
+    return 0;
+  }
   if (openbox) {
     for (const auto &b : shortcuts::bindings(cfg)) printf("%s\n", b.xml.c_str());
     return 0;
   }
-  // id, keys as shown, group, scope, keys (Openbox), description.
+  // id, keys as shown, group, scope, keys (Openbox), description, and the
+  // action (system) or where it works (application).
   for (const auto &s : shortcuts::table()) {
     std::string keys;
     for (const auto &k : shortcuts::keys_of(s, &cfg)) keys += (keys.empty() ? "" : " ") + k;
-    printf("%s\t%s\t%s\t%s\t%s\t%s\n", s.id, shortcuts::display_keys(s).c_str(), s.group,
-           s.scope == shortcuts::Scope::System ? "system" : "app", keys.c_str(), _(s.label));
+    printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.id, shortcuts::display_keys(s).c_str(), s.group,
+           s.scope == shortcuts::Scope::System ? "system" : "app", keys.c_str(), _(s.label), s.action);
   }
   return 0;
 }
@@ -444,7 +449,8 @@ int usage(int status) {
                  "  workspace list            the workspaces\n"
                  "  next-layout               the next keyboard layout (Win+Space)\n"
                  "  emoji                     the emoji picker (Win+.)\n"
-                 "  shortcuts [--openbox]     SDE's keyboard shortcuts\n"
+                 "  shortcuts [--openbox | --groups]  SDE's keyboard shortcuts (as SDE WM\n"
+                 "                            keybinds, or their sections)\n"
                  "  openbox-config FILE       write the workspaces and shortcuts into an\n"
                  "                            SDE WM configuration\n"
                  "  list                      workspaces and windows\n"));
@@ -459,7 +465,8 @@ int main(int argc, char **argv) {
   std::string cmd = argv[1];
   if (cmd == "--help" || cmd == "-h" || cmd == "help") return usage(0);
   if (cmd == "--version") return print_version("sde-windows", SDE_VERSION);
-  if (cmd == "shortcuts") return print_shortcuts(argc > 2 && !strcmp(argv[2], "--openbox"));
+  if (cmd == "shortcuts")
+    return print_shortcuts(argc > 2 && !strcmp(argv[2], "--openbox"), argc > 2 && !strcmp(argv[2], "--groups"));
   if (cmd == "openbox-config" && argc > 2) return write_openbox_config(argv[2]);
   // FLTK's display variables only, without FLTK's display setup.
   dpy = XOpenDisplay(nullptr);
