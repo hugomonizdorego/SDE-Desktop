@@ -694,8 +694,10 @@ class XanaraWindow : public sde::BufferedWindow {
   void save_session();
   bool replace_document(DocTab &t, const std::string &path, const std::string &password, bool working, int page,
                         bool keep_view, const std::vector<int> &changed_pages = {});
-  // A new tab for |d|, shown as |target|.
-  DocTab *add_tab(std::unique_ptr<Document> d, const std::string &target);
+  // A new tab for |d|, shown as |target|. An untitled document's tab is
+  // known as "untitled:TARGET": a file of that name opened later is
+  // another document.
+  DocTab *add_tab(std::unique_ptr<Document> d, const std::string &target, bool untitled = false);
   bool layout_edit_bar(int y0, int h);  // the text and picture tools of the Edit mode
   void align_menu(int x, int y);
   void stamp_pages(StampSpec::Kind kind);

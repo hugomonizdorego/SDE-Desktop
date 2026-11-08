@@ -968,7 +968,7 @@ bool XanaraWindow::open_path(const std::string &path0, int page) {
   return true;
 }
 
-DocTab *XanaraWindow::add_tab(std::unique_ptr<Document> d, const std::string &target) {
+DocTab *XanaraWindow::add_tab(std::unique_ptr<Document> d, const std::string &target, bool untitled) {
   commit_field();
   auto t = std::make_unique<DocTab>();
   t->doc = std::move(d);
@@ -995,7 +995,8 @@ DocTab *XanaraWindow::add_tab(std::unique_ptr<Document> d, const std::string &ta
   t->view->hide();
   t->view->set_document(t->doc.get());
   if (mode_ == Mode::Edit) t->view->set_tool(Tool::Edit);
-  int at = tablist_.open(target);
+  t->untitled = untitled;
+  int at = tablist_.open(untitled ? "untitled:" + target : target);
   DocTab *raw = t.get();
   tabs_.insert(tabs_.begin() + at, std::move(t));
   activate_tab(at);
@@ -1024,9 +1025,10 @@ bool XanaraWindow::open_untitled(const std::string &file, const std::string &nam
   for (char &c : stem)
     if (c == '/') c = '-';
   if (stem.empty()) stem = _("Untitled");
-  std::string target = unused_name(dir, stem, [this](const std::string &p) { return tablist_.find(p) >= 0; });
-  DocTab *t = add_tab(std::move(d), target);
-  t->untitled = true;
+  std::string target = unused_name(dir, stem, [this](const std::string &p) {
+    return tablist_.find(p) >= 0 || tablist_.find("untitled:" + p) >= 0;
+  });
+  DocTab *t = add_tab(std::move(d), target, true);
   t->working_copy = true;
   t->temps.push_back(file);
   t->view->set_fit(Fit::Width);
