@@ -3162,7 +3162,7 @@ const PageAlias kPageAliases[] = {
     {"wallpaper", "appearance", "wallpaper"}, {"wallpapers", "appearance", "wallpaper"},
     {"theme", "appearance", nullptr},     {"background", "appearance", "wallpaper"},
     {"icons", "desktop", nullptr},        {"start", "start-menu", nullptr},
-    {"start-button", "panel", "start-button"},
+    {"start-button", "panel", "start-button"}, {"task-view", "panel", "task-view"},
     {"menu", "start-menu", nullptr},      {"startmenu", "start-menu", nullptr},
     {"displays", "display", nullptr},     {"screen", "display", nullptr},
     {"monitor", "display", nullptr},      {"keyboard", "input", nullptr},

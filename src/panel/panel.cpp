@@ -127,6 +127,8 @@ void Panel::load_config() {
     IconLoader::clear_cache();
   }
   autohide_ = cfg_.get_bool("panel", "autohide", false);
+  // The Task View button needs sde-taskview (looked for again after installs).
+  task_view_installed_ = !find_program("sde-taskview").empty();
   pinned_.clear();
   std::vector<std::string> seen_exec;
   for (auto &id : split(cfg_.get("panel", "pinned"), ';')) {
@@ -329,6 +331,12 @@ void Panel::setup() {
     }
     badges::Badges::get().notifications_changed();
     badges_changed(data);
+    bool task_view = !find_program("sde-taskview").empty();
+    if (task_view != self->task_view_installed_) {
+      self->task_view_installed_ = task_view;
+      self->relayout();
+      self->redraw();
+    }
   }, this);
   TouchpadMonitor::get().start([this] { touchpad_activity(); },
                                [this] {
@@ -936,6 +944,8 @@ std::string Panel::tooltip_for(const Target &t) const {
     return _("Clock and alarms · Super+C opens the calendar");
   } else if (t.kind == SHOW_DESKTOP) {
     return _("Show Desktop · Super+D");
+  } else if (t.kind == TASK_VIEW) {
+    return _("Task View · Super+Tab");
   } else if (t.kind == START) {
     return _("Start · Super");
   } else if (t.kind == TASK && t.index >= 0 && t.index < int(tasks_.size())) {
@@ -983,6 +993,9 @@ bool Panel::target_rect(const Target &t, int &x, int &w) const {
     case SHOW_DESKTOP:
       x = show_desktop_x_, w = show_desktop_w_;
       return true;
+    case TASK_VIEW:
+      x = task_view_x_, w = task_view_w_;
+      return task_view_w_ > 0;
     case NOTIFY:
       x = notify_x_, w = notify_w_;
       return notify_w_ > 0;
@@ -1395,6 +1408,14 @@ void Panel::relayout() {
       search_w_ = H;
   }
   int lead = search_w_ ? search_x_ + search_w_ : start_w_;
+  // 0.2.0 Alpha 4: Task View (sde-taskview: the workspaces and their
+  // windows, Super+Tab) after the search, when switched on and installed.
+  task_view_w_ = task_view_installed_ && cfg_.get_bool("panel", "show_task_view", false) &&
+                         tasks_end_ - lead > S(240)
+                     ? H
+                     : 0;
+  task_view_x_ = lead + (task_view_w_ ? S(2) : 0);
+  if (task_view_w_) lead = task_view_x_ + task_view_w_;
 
   // Keep the status area and running windows reachable on short panels.
   int room = std::max(0, tasks_end_ - lead - S(12));
@@ -1426,6 +1447,7 @@ Panel::Target Panel::hit(int x, int y) const {
   if (y < 0 || y >= h()) return t;
   if (x < start_w_) return {START, 0};
   if (search_w_ && x >= search_x_ && x < search_x_ + search_w_) return {SEARCH, 0};
+  if (task_view_w_ && x >= task_view_x_ && x < task_view_x_ + task_view_w_) return {TASK_VIEW, 0};
   for (size_t i = 0; i < pinned_.size(); ++i)
     if (x >= pinned_[i].x && x < pinned_[i].x + pin_w_) return {PINNED, int(i)};
   for (size_t i = 0; i < tasks_.size(); ++i)
@@ -1542,6 +1564,14 @@ void Panel::draw() {
       button_bg(search_x_, search_w_, {SEARCH, 0}, searching);
       double g = S(20);
       panel_search::glyph(p, search_x_ + (search_w_ - g) / 2.0, (H - g) / 2.0, g, t.text);
+    }
+    if (task_view_w_) {
+      // Task View: a window in front of another (0.2.0 Alpha 4).
+      button_bg(task_view_x_, task_view_w_, {TASK_VIEW, 0}, false);
+      double g = S(20), gx = task_view_x_ + (task_view_w_ - g) / 2.0, gy = (H - g) / 2.0, lw = Sd(1.6);
+      p.line(gx + g * 0.30, gy + g * 0.18, gx + g * 0.92, gy + g * 0.18, t.text_dim, lw);
+      p.line(gx + g * 0.92, gy + g * 0.18, gx + g * 0.92, gy + g * 0.62, t.text_dim, lw);
+      p.stroke_rounded(gx + g * 0.08, gy + g * 0.32, g * 0.66, g * 0.52, Sd(2.5), t.text, lw);
     }
 
     for (size_t i = 0; i < pinned_.size(); ++i) {
@@ -1812,6 +1842,7 @@ void Panel::qa_dump_panel() {
            std::to_string(H) + "\t1\n";
   };
   std::string text = line("start", 0, start_w_) + line("clock", clock_x_, clock_w_) +
+                     (task_view_w_ ? line("task-view", task_view_x_, task_view_w_) : std::string()) +
                      (search_w_ ? line(search_box_shown() ? "search" : "search-icon", search_x_,
                                        search_w_)
                                 : std::string()) +
@@ -2009,6 +2040,9 @@ int Panel::handle(int event) {
           break;
         case SHOW_DESKTOP:
           x11::set_showing_desktop(!x11::showing_desktop());
+          break;
+        case TASK_VIEW:
+          spawn_detached({"sde-taskview"});
           break;
         default:
           break;

@@ -2,8 +2,8 @@
 // Control Center > Panel > Start button (0.2.0 Alpha 4): the picture and the
 // text of the panel's Start button and which of them it shows, with a
 // preview at the panel's real size ([panel] start_style, start_label,
-// start_icon; src/common/start_button.h, docs/PANEL.md). The panel follows
-// every change at once.
+// start_icon; src/common/start_button.h, docs/PANEL.md); and the Task View
+// button ([panel] show_task_view). The panel follows every change at once.
 #include <FL/Fl.H>
 #include <FL/Fl_Input.H>
 #include <FL/Fl_Window.H>
@@ -184,6 +184,21 @@ void build_start_button_card(Page *page) {
     });
     return b;
   });
+  page->end_card();
+
+  // The Task View button (sde-taskview: the workspaces and their windows),
+  // after the search; off by default.
+  page->anchor("task-view");
+  page->begin_card(_("Task View"));
+  bool installed = !find_program("sde-taskview").empty();
+  page->switch_row(
+      _("Task View button"), cfg.get_bool("panel", "show_task_view", false),
+      [](bool on) {
+        settings_config().set("panel", "show_task_view", on ? "true" : "false");
+        apply_change();
+      },
+      installed ? _("Shows your workspaces and their windows, like Super+Tab.")
+                : _("Needs SDE Task View, which is not installed: the button appears once it is."));
   page->end_card();
 }
 

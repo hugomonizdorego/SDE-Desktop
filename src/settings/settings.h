@@ -36,8 +36,8 @@ void build_network_diagnostics(Page *page);
 void build_clock_page(Page *page);
 // Settings > Default Applications (default_apps_page.cpp).
 void build_default_apps_page(Page *page);
-// Settings > Panel > Start button: its picture, text and style
-// (start_button_page.cpp, 0.2.0 Alpha 4).
+// Settings > Panel > Start button (its picture, text and style) and Task
+// View (start_button_page.cpp, 0.2.0 Alpha 4).
 void build_start_button_card(Page *page);
 // Control Center > About: the Selviana Desktop Environment and, separately,
 // the system it runs on (about_page.cpp).
