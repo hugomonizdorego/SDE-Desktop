@@ -50,6 +50,7 @@
 #include "xdnd.h"
 
 namespace sde {
+class ContextMenu;
 namespace liria {
 
 class MainWindow;
@@ -207,6 +208,9 @@ class MainWindow : public BufferedWindow {
   void view_menu(int x, int y);
   void more_menu(int x, int y);
   void send_to(const std::string &dir);
+  // Pops |m| up (below |anchor| when given); the QA description names its
+  // items while it is open ("@menu:").
+  void show_menu(ContextMenu &m, int x, int y, Fl_Widget *anchor = nullptr);
 
   // ---- drag and drop
   // Files dropped on |dir| (a folder, or the folder shown) with |action|.
@@ -302,6 +306,7 @@ class MainWindow : public BufferedWindow {
   int status_hover_ = -1;
   std::string message_;
   bool message_error_ = false;
+  std::string menu_qa_;  // the items of the open menu, for the UI tests
   bool csd_ = true;
   bool sizing_sidebar_ = false;
   std::string id_;

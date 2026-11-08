@@ -91,6 +91,27 @@ ContextMenu open_with_menu(MainWindow *w, const Item &e) {
 
 }  // namespace
 
+void MainWindow::show_menu(ContextMenu &m, int x, int y, Fl_Widget *anchor) {
+  if (getenv("SDE_PANEL_QA_DIR")) {
+    // "Open|Open with ▸|-Paste|..." ('-': disabled), quick actions first.
+    menu_qa_.clear();
+    for (const Fl_Menu_Item *it = m.items(); it && it->label(); it = it->next()) {
+      std::string label = it->label();
+      label.erase(std::remove(label.begin(), label.end(), '&'), label.end());
+      if (it->submenu()) label += " >";
+      menu_qa_ += (menu_qa_.empty() ? "" : "|") + std::string(it->active() ? "" : "-") + label;
+    }
+    if (menu_qa_.empty()) menu_qa_ = "(empty)";
+    schedule_qa();
+  }
+  if (anchor) m.popup_below(anchor);
+  else m.popup(x, y);
+  if (!menu_qa_.empty()) {
+    menu_qa_.clear();
+    schedule_qa();
+  }
+}
+
 void MainWindow::send_to(const std::string &dir) {
   std::vector<std::string> paths = selected_paths();
   if (!paths.empty()) App::get().transfer(paths, dir, Transfer::Copy, this, false);
@@ -113,7 +134,7 @@ void MainWindow::item_menu(int mx, int my) {
     m.item(_("Delete permanently"), [this] { remove(true); }, {"delete", FL_Delete});
     m.separator();
     m.item(_("Properties"), [this] { properties(); }, {"properties", FL_ALT + FL_Enter});
-    m.popup(mx, my);
+    show_menu(m, mx, my);
     return;
   }
   EditActions edit;
@@ -194,7 +215,7 @@ void MainWindow::item_menu(int mx, int my) {
   }
   m.separator();
   m.item(_("Properties"), [this] { properties(); }, {"properties", FL_ALT + FL_Enter});
-  m.popup(mx, my);
+  show_menu(m, mx, my);
 }
 
 void MainWindow::background_menu(int mx, int my) {
@@ -215,7 +236,7 @@ void MainWindow::background_menu(int mx, int my) {
       App::get().prefs.save();
       App::get().places_changed();
     });
-    m.popup(mx, my);
+    show_menu(m, mx, my);
     return;
   }
   bool folder = t.is_folder(), writable = can_write_here();
@@ -295,7 +316,7 @@ void MainWindow::background_menu(int mx, int my) {
   m.check(_("Show hidden items"), app.prefs.show_hidden, [this] { toggle_hidden(); });
   m.separator();
   m.item(_("Properties"), [this] { properties(); }, {"properties", FL_ALT + FL_Enter});
-  m.popup(mx, my);
+  show_menu(m, mx, my);
 }
 
 void MainWindow::place_menu(const std::string &location, int mx, int my, const std::string &drive_id) {
@@ -370,7 +391,7 @@ void MainWindow::place_menu(const std::string &location, int mx, int my, const s
       if (chooser::entry_for_path(loc, it)) show_properties(this, {it});
     }, {"properties"});
   }
-  if (!m.empty()) m.popup(mx, my);
+  if (!m.empty()) show_menu(m, mx, my);
 }
 
 void MainWindow::new_menu(Fl_Widget *anchor) {
@@ -390,8 +411,8 @@ void MainWindow::new_menu(Fl_Widget *anchor) {
     m.item(label, [this, path] { new_document(path); }, {icons.empty() ? "" : icons[0]});
   }
   const CommandBar::Button *b = commandbar_->find("new");
-  if (b) m.popup(b->x, commandbar_->y() + commandbar_->h() - S(2));
-  else m.popup_below(anchor);
+  if (b) show_menu(m, b->x, commandbar_->y() + commandbar_->h() - S(2));
+  else show_menu(m, 0, 0, anchor);
 }
 
 void MainWindow::share_menu(Fl_Widget *, int x, int y) {
@@ -407,7 +428,7 @@ void MainWindow::share_menu(Fl_Widget *, int x, int y) {
     }
     m.submenu(_("Send to"), std::move(send), "drive-removable-media");
   }
-  m.popup(x, y);
+  show_menu(m, x, y);
 }
 
 void MainWindow::sort_menu(int x, int y) {
@@ -436,7 +457,7 @@ void MainWindow::sort_menu(int x, int y) {
     tt.model.refresh();
     fileview_->sync();
   });
-  m.popup(x, y);
+  show_menu(m, x, y);
 }
 
 void MainWindow::view_menu(int x, int y) {
@@ -468,7 +489,7 @@ void MainWindow::view_menu(int x, int y) {
     App::get().places_changed();
   });
   m.submenu(_("Show"), std::move(show), "hidden");
-  m.popup(x, y);
+  show_menu(m, x, y);
 }
 
 void MainWindow::more_menu(int x, int y) {
@@ -495,7 +516,7 @@ void MainWindow::more_menu(int x, int y) {
   });
   m.item(_("Properties"), [this] { properties(); }, {"properties", FL_ALT + FL_Enter});
   m.item(_("About Liria"), [this] { about(); }, {"help-about"});
-  m.popup(x, y);
+  show_menu(m, x, y);
 }
 
 }  // namespace liria

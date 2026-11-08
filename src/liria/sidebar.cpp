@@ -119,14 +119,13 @@ void Sidebar::rebuild() {
       r->ejectable = !d.system && d.mounted && (d.can_eject || (d.removable && d.can_unmount));
     }
   }
-  heading("network", _("Network"), prefs.side_network);
-  if (prefs.side_network) {
-    place("network", _("Network"), kNetwork, {"network-workgroup", "folder-remote", "network-server"});
-    for (const auto &d : app.drives.network()) {
-      Row *r = place("net:" + d.id, d.name, d.path.empty() ? d.uri : d.path, d.icons);
-      r->drive_id = d.id;
-      r->ejectable = d.can_unmount;
-    }
+  // Network: one place, as in Windows 11 (no heading above it), and the
+  // shares that are open below it.
+  place("network", _("Network"), kNetwork, {"network-workgroup", "folder-remote", "network-server"});
+  for (const auto &d : app.drives.network()) {
+    Row *r = place("net:" + d.id, d.name, d.path.empty() ? d.uri : d.path, d.icons);
+    r->drive_id = d.id;
+    r->ejectable = d.can_unmount;
   }
   // Positions.
   int y = S(6);
@@ -137,6 +136,7 @@ void Sidebar::rebuild() {
       r.h = S(30);
       y += S(30);
     } else {
+      if (r.id == "network") y += S(10);  // as far from the drives as a heading
       r.y = y;
       r.h = S(34);
       y += S(36);
@@ -203,7 +203,7 @@ void SidebarCanvas::draw() {
       if (int(i) == s_->drop_row) p.stroke_rounded(rx, ry, rw, r.h, t.radius_for(r.h), l.accent, Sd(1.5));
       if (Fl::focus() == this && int(i) == s_->focus_row) focus_ring(p, rx, ry, rw, r.h, t.radius_for(r.h));
       draw_icon(p, r.icons, x() + S(22), ry + (r.h - S(18)) / 2.0, S(18));
-      if (r.pinned && (int(i) == s_->hover || selected || true))
+      if (r.pinned)  // the pin mark of Windows 11's navigation pane, always shown
         liria::glyph(p, "pin", x() + w() - S(36), ry + (r.h - S(14)) / 2.0, S(14),
                      int(i) == s_->hover ? l.dim : l.faint, 1.5);
       if (r.ejectable) {

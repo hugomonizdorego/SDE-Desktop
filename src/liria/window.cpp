@@ -1643,6 +1643,7 @@ void MainWindow::sort_by(chooser::SortKey key) {
   t.model.refresh();
   fileview_->sync();
   schedule_thumbnails();
+  schedule_qa();
 }
 
 void MainWindow::set_sort_descending(bool descending) {
@@ -1660,6 +1661,7 @@ void MainWindow::set_sort_descending(bool descending) {
   t.model.refresh();
   fileview_->sync();
   schedule_thumbnails();
+  schedule_qa();
 }
 
 void MainWindow::toggle_hidden() {
@@ -2223,6 +2225,7 @@ void MainWindow::qa_dump() {
   state("jobs", std::to_string(app.running_jobs()));
   state("undo", std::to_string(app.undo.size()));
   state("status", status_text());
+  state("menu", menu_qa_);
   for (int i = 0; i < tab_count(); ++i) {
     if (i >= int(tabbar_->slots.size())) break;
     control("tab:" + std::to_string(i) + ":" + tab_at(i).title(), tabbar_->slots[size_t(i)].x, tabbar_->y(),
