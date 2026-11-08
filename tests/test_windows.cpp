@@ -168,6 +168,8 @@ static void test_sync_keyboard() {
       "</action></keybind>\n"
       "    <keybind key=\"W-e\"><action name=\"Execute\"><command>xdg-open .</command></action></keybind>\n"
       "    <keybind key=\"Print\"><action name=\"Execute\"><command>flameshot gui</command></action></keybind>\n"
+      "    <!-- <keybind key=\"W-k\"><action name=\"Execute\"><command>blueman-manager</command></action>"
+      "</keybind> -->\n"
       "    <!-- Windows -->\n"
       "    <keybind key=\"W-Left\">\n      <action name=\"UnmaximizeFull\"/>\n"
       "      <action name=\"MoveResizeTo\"><x>0</x><y>0</y><width>50%</width><height>100%</height></action>\n"
@@ -187,6 +189,10 @@ static void test_sync_keyboard() {
   CHECK(count(rc, "<keybind key=\"W-F12\">") == 1);              // a chain of the user's stays whole
   CHECK(count(rc, "<keybind key=\"W-d\">") == 1);
   CHECK(count(rc, "<keybind key=\"Super_L\"") == 1);
+  // A keybind the user commented out stays a comment and leaves its key to SDE.
+  CHECK(count(rc, "blueman-manager") == 1);
+  CHECK(rc.find("<keybind key=\"W-k\"><action name=\"Execute\"><command>sde-panel --section bluetooth") <
+        rc.find(shortcuts::kEndMark));
   // Written again, nothing changes; the user's keybinds stay after the block.
   std::string twice = rc;
   CHECK(!shortcuts::sync_openbox_keyboard(twice, cfg));

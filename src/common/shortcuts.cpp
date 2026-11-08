@@ -336,6 +336,14 @@ std::vector<Element> keybind_elements(const std::string &text, size_t from, size
   while (pos < to) {
     size_t open = text.find("<keybind", pos);
     if (open == std::string::npos || open >= to) break;
+    // A keybind the user commented out is none: its key stays SDE's.
+    size_t comment = text.find("<!--", pos);
+    if (comment != std::string::npos && comment < open) {
+      size_t close = text.find("-->", comment + 4);
+      if (close == std::string::npos) break;
+      pos = close + 3;
+      continue;
+    }
     size_t tag_end = text.find('>', open);
     if (tag_end == std::string::npos || tag_end >= to) break;
     Element e;
