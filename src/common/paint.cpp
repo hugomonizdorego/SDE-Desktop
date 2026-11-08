@@ -396,8 +396,12 @@ void BufferedWindow::flush() {
   // cost up to 25 ms per frame at 2880x1800 and 200 %, slower than the
   // finger. FLTK's Fl_Scroll moves the pixels that stay within the back
   // buffer and draws only the strip that comes into view.
+  // UI tests read what windows dump of their controls while they draw
+  // (SDE_PANEL_QA_DIR): with them every frame is drawn, as before.
+  static const bool qa = getenv("SDE_PANEL_QA_DIR") != nullptr;
   bool other = false;
-  Fl_Scroll *scrolled = !fresh && d == FL_DAMAGE_CHILD && partial_enabled() ? scrolled_only(this, other) : nullptr;
+  Fl_Scroll *scrolled =
+      !fresh && !qa && d == FL_DAMAGE_CHILD && partial_enabled() ? scrolled_only(this, other) : nullptr;
   if (scrolled) {
     int sx = scrolled->x(), sy = scrolled->y(), sw = scrolled->w(), sh = scrolled->h();
     if (stats) {

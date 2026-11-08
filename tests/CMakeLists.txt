@@ -520,3 +520,10 @@ if(SDE_XVFB)
     $<TARGET_FILE:sde-touch-probe> $<TARGET_FILE:sde-touchscreen>)
   set_tests_properties(sde-touch-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
 endif()
+# ... and the scroll of a Control Center page by moving pixels (paint.cpp):
+# pixel-identical to a full repaint at 100 % and 200 %.
+if(SDE_XVFB)
+  add_test(NAME sde-scroll-blit COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_scroll_blit.py
+    $<TARGET_FILE:sde-settings>)
+  set_tests_properties(sde-scroll-blit PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()
