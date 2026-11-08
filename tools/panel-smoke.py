@@ -378,11 +378,27 @@ def menu_checks():
     L=layout('SDE Menu');blue=L['tile:Bluefish'];wide=L['tile:Calendar']
     drag(m,center(wide),(blue[0]+2,blue[1]+blue[3]//2))
     waitfor(lambda:'Work,qa-atlas.desktop:m,qa-calendar.desktop:w,qa-bluefish.desktop:m' in conf(),'tile drag not saved: '+conf())
-    # Right-click a tile: Resize > Large.
-    r=item('SDE Menu','tile:Atlas');g=geom(m)
-    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');time.sleep(.6)
-    shot('25-menu-tile-menu')
-    into_submenu(3);run('xdotool','key','Down','Down','Down','Return');time.sleep(.6)
+    # Right-click a tile: Resize > Large. Each step waits for the menu it
+    # needs (the popup's QA sequence, FLTK's menu windows): under load a
+    # fixed pause let the keys reach the start menu or the main menu, which
+    # left the Right that opens Resize unseen (0.2.0 Alpha 4).
+    def popup_serial():return next((int(k[5:]) for k in layout('SDE Menu-popup') if k.startswith('@seq:')),0)
+    for attempt in range(3):
+        r=item('SDE Menu','tile:Atlas');g=geom(m);seq=popup_serial();menus=menu_windows()
+        run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3')
+        if not soon(lambda:popup_serial()>seq and menu_windows()>menus,8):continue
+        time.sleep(.3)
+        if attempt==0:shot('25-menu-tile-menu')
+        into_submenu(3)
+        # The submenu is a menu window of its own; Right again when FLTK
+        # had not made it yet when the first one came.
+        for _ in range(3):
+            if soon(lambda:menu_windows()>menus+1,3):break
+            run('xdotool','key','Right');time.sleep(.4)
+        if menu_windows()<=menus+1:
+            run('xdotool','key','Escape','Escape');soon(lambda:menu_windows()<=menus,3);continue
+        run('xdotool','key','Down','Down','Down','Return')
+        if soon(lambda:'qa-atlas.desktop:l' in conf(),8):break
     waitfor(lambda:'qa-atlas.desktop:l' in conf(),'tile resize not saved: '+conf())
     # Rename a group by clicking its name.
     press('SDE Menu','group:Work');time.sleep(.3)
@@ -1851,6 +1867,54 @@ def right_click_panel(name,expect):
     x,y=panel_button(name);return right_click_at(x,y,expect)
 def close_menu():run('xdotool','key','Escape');time.sleep(.3)
 def labels(items):return [i[0] for i in items]
+class _XWindowAttributes(__import__('ctypes').Structure):
+    import ctypes as _c
+    _fields_=[('x',_c.c_int),('y',_c.c_int),('width',_c.c_int),('height',_c.c_int),('border_width',_c.c_int),
+              ('depth',_c.c_int),('visual',_c.c_void_p),('root',_c.c_ulong),('class_',_c.c_int),
+              ('bit_gravity',_c.c_int),('win_gravity',_c.c_int),('backing_store',_c.c_int),
+              ('backing_planes',_c.c_ulong),('backing_pixel',_c.c_ulong),('save_under',_c.c_int),
+              ('colormap',_c.c_ulong),('map_installed',_c.c_int),('map_state',_c.c_int),
+              ('all_event_masks',_c.c_long),('your_event_mask',_c.c_long),('do_not_propagate_mask',_c.c_long),
+              ('override_redirect',_c.c_int),('screen',_c.c_void_p)]
+_xlib=None
+def menu_windows():
+    """How many FLTK menu windows are on the screen: mapped override-redirect
+    windows without a name (0.2.0 Alpha 4: the tile menu step waits for its
+    submenu instead of a fixed pause)."""
+    global _xlib
+    import ctypes,ctypes.util
+    if _xlib is None:
+        x=ctypes.CDLL(ctypes.util.find_library('X11') or 'libX11.so.6')
+        x.XOpenDisplay.restype=ctypes.c_void_p;x.XOpenDisplay.argtypes=[ctypes.c_char_p]
+        x.XDefaultRootWindow.restype=ctypes.c_ulong;x.XDefaultRootWindow.argtypes=[ctypes.c_void_p]
+        x.XQueryTree.argtypes=[ctypes.c_void_p,ctypes.c_ulong,ctypes.POINTER(ctypes.c_ulong),ctypes.POINTER(ctypes.c_ulong),
+                               ctypes.POINTER(ctypes.POINTER(ctypes.c_ulong)),ctypes.POINTER(ctypes.c_uint)]
+        x.XGetWindowAttributes.argtypes=[ctypes.c_void_p,ctypes.c_ulong,ctypes.POINTER(_XWindowAttributes)]
+        x.XFetchName.argtypes=[ctypes.c_void_p,ctypes.c_ulong,ctypes.POINTER(ctypes.c_char_p)]
+        x.XFree.argtypes=[ctypes.c_void_p]
+        d=x.XOpenDisplay(e['DISPLAY'].encode())
+        if not d:return 0
+        _xlib=(x,d)
+    x,d=_xlib
+    root,parent=ctypes.c_ulong(),ctypes.c_ulong();kids=ctypes.POINTER(ctypes.c_ulong)();n=ctypes.c_uint()
+    if not x.XQueryTree(d,x.XDefaultRootWindow(d),ctypes.byref(root),ctypes.byref(parent),ctypes.byref(kids),ctypes.byref(n)):return 0
+    count=0
+    for i in range(n.value):
+        attr=_XWindowAttributes()
+        if not x.XGetWindowAttributes(d,kids[i],ctypes.byref(attr)) or attr.map_state!=2 or not attr.override_redirect:continue
+        name=ctypes.c_char_p()
+        named=x.XFetchName(d,kids[i],ctypes.byref(name)) and name.value
+        if name:x.XFree(name)
+        if not named:count+=1
+    if kids:x.XFree(kids)
+    return count
+def soon(fn,timeout=4.0):
+    """fn() within |timeout| seconds (no failure when it is not)."""
+    end=time.time()+timeout
+    while time.time()<end:
+        if fn():return True
+        time.sleep(.08)
+    return bool(fn())
 def into_submenu(downs):
     """Down |downs| times to a submenu's title, then Right into it. The keys
     go one by one: FLTK opens a submenu window only after the event that

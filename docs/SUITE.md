@@ -14,7 +14,7 @@ they are not duplicated inside SDE.
 | Xanara | `xanara` | native SDE application (Selviana DE Project) |
 | Taca | `taca` | native SDE application (Selviana DE Project) |
 | Photo | `sde-view` | native SDE application (Selviana DE Project) |
-| SDE System Monitor | `sde-system-monitor` | native SDE application (Selviana DE Project) |
+| SDE System Monitor | `sde-system-monitor` | native SDE application (Selviana DE Project); processes and kernel threads: [below](#sde-system-monitor) |
 | SDE Power | `sde-power` (Control Center > Power) | native SDE application (Selviana DE Project, alpha16) |
 | SDE Screen Lock | `sde-lock` (Control Center > Lock Screen) | native SDE application (Selviana DE Project, alpha16) |
 | Calculator | `calculator` | native SDE application (Selviana DE Project, alpha50; replaced the GTK4 scientific-calculator frontend) |
@@ -635,3 +635,42 @@ component, which cleared the input instead of computing "2 + 2".
 
 Tests: `calculator-engine` (tests/test_calculator.cpp) and `sde-calculator`
 (tests/test_calculator.py).
+
+## SDE System Monitor
+
+SDE System Monitor (`sde-system-monitor`, `src/sysmon/`, manual page
+`sde-system-monitor(1)`) has the pages Processes, Performance, File Systems
+and Startup Apps. Since 0.2.0 Alpha 4 its process list starts like the
+monitors of GNOME and KDE:
+
+* **My processes** (the default): your apps (they own a window or were
+  started from a .desktop file) and your background processes, the programs
+  and services that run as you. **All processes** adds the system's
+  processes (root's and the other users') in a group of their own. The list
+  is sorted by CPU until another column is chosen.
+* **The threads of the Linux kernel are hidden** (0.2.0 Alpha 3.1 listed
+  every kworker, ksoftirqd, rcu_preempt and migration thread as a background
+  process); the line under the list says how many. **Show kernel threads**
+  lists them in a group of their own, "Linux kernel", each with its own name
+  and what it does ("Linux kernel — worker thread"); the tooltip and the
+  line under the list explain the one selected. Kernel threads are told
+  from programs by the flag `PF_KTHREAD` of `/proc/PID/stat` (on kernels
+  without it: children of kthreadd without a command line) and described by
+  their names (`describe_kernel_thread()` in `src/sysmon/procfs.cpp`):
+  kworker threads are the kernel's workers, which do the work that drivers,
+  file systems and the network hand over (their name gives the processor,
+  `u` for any, and after `+` or `-` the work queue); ksoftirqd finishes
+  interrupts, rcu_* keep shared memory consistent, migration moves tasks
+  between processors, and so on. They belong to no program, use no memory
+  of their own and cannot be ended: End Task, Kill, Stop, Continue, Change
+  Priority and Open File Location are never offered for them.
+* The view and the switch are kept in `[system-monitor]` of
+  `~/.config/sde/sde.conf` (`processes=mine|all`, `kernel-threads=`).
+
+Tests: `sde-sysmon-parsers` (tests/test_sysmon.cpp: the parsers, the
+kernel-thread flag and the descriptions) and `sde-sysmon-ui`
+(tests/test_sysmon_ui.py, on Xvfb: My processes without kernel threads,
+Show kernel threads with their group and descriptions, End Task off for
+them, All processes with another user's process, the choices kept). With
+`SDE_PANEL_QA_DIR` the window writes `System-Monitor.txt` (the view, the
+groups, each row and the buttons).
