@@ -451,6 +451,7 @@ int usage(int status) {
                  "  emoji                     the emoji picker (Win+.)\n"
                  "  shortcuts [--openbox | --groups]  SDE's keyboard shortcuts (as SDE WM\n"
                  "                            keybinds, or their sections)\n"
+                 "  sheet                     open the printable shortcut sheet (PDF)\n"
                  "  openbox-config FILE       write the workspaces and shortcuts into an\n"
                  "                            SDE WM configuration\n"
                  "  list                      workspaces and windows\n"));
@@ -468,6 +469,12 @@ int main(int argc, char **argv) {
   if (cmd == "shortcuts")
     return print_shortcuts(argc > 2 && !strcmp(argv[2], "--openbox"), argc > 2 && !strcmp(argv[2], "--groups"));
   if (cmd == "openbox-config" && argc > 2) return write_openbox_config(argv[2]);
+  if (cmd == "sheet") {
+    // The printable shortcut sheet (Welcome's tile opens it this way).
+    if (shortcuts::open_sheet()) return 0;
+    fprintf(stderr, "sde-windows: the shortcut sheet is not installed\n");
+    return 1;
+  }
   // FLTK's display variables only, without FLTK's display setup.
   dpy = XOpenDisplay(nullptr);
   if (!dpy) {

@@ -27,3 +27,11 @@ target_link_libraries(sde-screenshot PRIVATE sde-windows-core)
 
 install(TARGETS sde-window-menu sde-windows sde-taskview sde-screenshot
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# The printable shortcut sheet (tools/make-shortcut-sheet.py) where Welcome
+# and the Control Center open it (shortcuts::sheet_path(); not under
+# /usr/share/doc, which may be left out or compressed), and with the guides.
+install(FILES ${PROJECT_SOURCE_DIR}/docs/SDE-Keyboard-Shortcuts.pdf DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/doc)
+install(FILES ${PROJECT_SOURCE_DIR}/docs/SHORTCUTS.md ${PROJECT_SOURCE_DIR}/docs/WINDOWS.md
+              ${PROJECT_SOURCE_DIR}/docs/SDE-Keyboard-Shortcuts.pdf
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)

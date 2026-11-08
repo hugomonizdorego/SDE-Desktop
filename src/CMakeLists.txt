@@ -180,7 +180,7 @@ endif()
 add_executable(sde-run run/main.cpp)
 target_link_libraries(sde-run PRIVATE sde-common)
 
-add_executable(sde-logout logout/main.cpp)
+add_executable(sde-logout logout/main.cpp logout/security.cpp)
 target_link_libraries(sde-logout PRIVATE sde-common)
 
 # Force Close (0.2.0 Alpha 3.1, docs/FORCE-CLOSE.md): sde-watchdog notices

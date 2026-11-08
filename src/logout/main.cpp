@@ -18,6 +18,7 @@
 #include "i18n.h"
 #include "icons.h"
 #include "paint.h"
+#include "security.h"
 #include "spawn.h"
 #include "theme.h"
 #include "util.h"
@@ -157,6 +158,8 @@ int main(int argc, char **argv) {
   sde::set_default_window_icon({"sde-logout"});  // title bar and taskbar
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--version")) return print_version(app_info());
+    // 0.2.0 Alpha 4: Ctrl+Alt+Delete's security options (security.h).
+    if (!strcmp(argv[i], "--security")) return run_security_screen();
     // sde-logout --action NAME runs one action without the dialog (the
     // Action Center's power buttons).
     if (!strcmp(argv[i], "--action") && i + 1 < argc) {
@@ -173,7 +176,7 @@ int main(int argc, char **argv) {
       fprintf(stderr, "sde-logout: unknown action %s\n", argv[i + 1]);
       return 2;
     }
-    printf("Usage: sde-logout [--action lock|suspend|logout|reboot|poweroff] [--version]\n");
+    printf("Usage: sde-logout [--action lock|suspend|logout|reboot|poweroff | --security] [--version]\n");
     return strcmp(argv[i], "--help") ? 2 : 0;
   }
   fl_open_display();
