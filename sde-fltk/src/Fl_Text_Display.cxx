@@ -27,6 +27,7 @@
 #include <string.h>
 #include <FL/Fl.H>
 #include <FL/platform.H>
+#include <FL/Fl_Touch.H>
 #include <FL/Fl_Text_Buffer.H>
 #include <FL/Fl_Text_Display.H>
 #include <FL/Fl_Window.H>
@@ -4197,6 +4198,28 @@ int Fl_Text_Display::handle_rmb(int readonly) {
  */
 int Fl_Text_Display::handle(int event) {
   if (!buffer()) return 0;
+  if (event == FL_SCROLL_GESTURE) {
+    // SDE-FLTK: a finger scrolls the text (FL/Fl_Touch.H), by whole lines
+    // like the scroll bar; the pixels in between are kept for the next event.
+    int dy = Fl::event_dy(), dx = Fl::event_dx();
+    int line_h = mMaxsize > 0 ? mMaxsize : (textsize() > 0 ? textsize() : 14);
+    int last = mNBufferLines + 3 - mNVisibleLines;
+    if (last < 1) last = 1;
+    int hmax = longest_vline() - text_area.w;
+    if (hmax < 0) hmax = 0;
+    // scroll() takes effect at the next draw(): go on from where it goes
+    int now_top = mTopLineNumHint, now_left = mHorizOffsetHint;
+    int can = (dy > 0 && now_top < last) || (dy < 0 && now_top > 1) ||
+              (dx > 0 && now_left < hmax) || (dx < 0 && now_left > 0);
+    int lines = Fl_Touch::scroll_units_y(line_h);
+    int top = now_top + lines, left = now_left + dx;
+    if (top > last) top = last;
+    if (top < 1) top = 1;
+    if (left > hmax) left = hmax;
+    if (left < 0) left = 0;
+    if (top != now_top || left != now_left) scroll(top, left);
+    return can || (!dx && !dy);
+  }
   // This isn't very elegant!
   if (!Fl::event_inside(text_area.x, text_area.y, text_area.w, text_area.h) &&
       !dragging && event != FL_LEAVE && event != FL_ENTER &&

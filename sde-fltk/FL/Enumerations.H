@@ -416,8 +416,24 @@ enum Fl_Event { // events
   /** A zoom event (ctrl/+/-/0/ or cmd/+/-/0/) was processed.
    Use Fl::add_handler() to be notified of this event.
    */
-  FL_ZOOM_EVENT         = 27
+  FL_ZOOM_EVENT         = 27,
+  /** SDE-FLTK: a finger scrolls on a touch screen (FL/Fl_Touch.H).
+      Fl::event_dx() and Fl::event_dy() are the pixels to scroll (positive
+      towards the end, as with FL_MOUSEWHEEL), Fl::event_x() and
+      Fl::event_y() where the finger touched; Fl_Touch::scroll_phase() says
+      whether the scroll begins, goes on, coasts after a flick or ends.
+      Return 1 when the widget can scroll in that direction, 0 otherwise.
+      The event goes to the widget under the finger and then to its parents
+      until one takes it; that widget gets the rest of the scroll.
+   */
+  FL_SCROLL_GESTURE     = 28
   // DEV NOTE: Keep this list in sync with FL/names.h
+};
+
+/** SDE-FLTK: directions for Fl_Widget::touch_drag(int). */
+enum {
+  FL_TOUCH_DRAG_X = 1,  ///< a finger drags the widget sideways
+  FL_TOUCH_DRAG_Y = 2   ///< a finger drags the widget up and down
 };
 
 /** \name When Conditions */

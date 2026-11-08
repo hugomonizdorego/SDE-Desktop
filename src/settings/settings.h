@@ -26,6 +26,7 @@ void build_display_page(Page *page);
 void start_display_watch();
 void build_input_page(Page *page);
 void build_touchpad_page(Page *page);  // touchpad.cpp
+void build_touch_page(Page *page);     // touch_page.cpp
 // Settings > Power and Settings > Lock Screen (power.cpp).
 void build_power_page(Page *page);
 void build_lock_page(Page *page);

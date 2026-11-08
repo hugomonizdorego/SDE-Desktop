@@ -68,6 +68,10 @@ Panel::Panel() : sde::BufferedWindow(0, 0, 800, 40, "SDE Panel") {
   end();
   border(0);
   resizable(nullptr);
+  // Tray icons are windows of other programs inside the panel: the panel
+  // leaves touches to the X server, which sends them mouse events (taps on
+  // the panel are clicks). Its popups take the touches (docs/TOUCH.md).
+  touch_events(false);
   load_config();
   place_on_screen();
   menu_.reset(new AppMenu());
@@ -118,6 +122,12 @@ void Panel::load_config() {
   // The panel and its popups are the floating layer (0.2.0 Alpha 4: with
   // the wallpaper's tint).
   theme_.use_floating_layer();
+  // Touch screens: a panel of at least 40 px at 100 % (docs/TOUCH.md).
+  touch_targets_ = large_touch_targets(cfg_);
+  if (touch_targets_ && theme_.panel_size < 40) {
+    theme_.panel_size = 40;
+    theme_.panel_height = S(40);
+  }
   theme_.apply_to_fltk();
   // Every saved setting (a tile pinned, the menu resized, ...) reloads the
   // config: keep the icons unless the icon theme or the dark mode that
@@ -258,14 +268,16 @@ void Panel::setup() {
 
   input_display_ = XOpenDisplay(nullptr);
   if (input_display_) {
-    int event, error, major = 2, minor = 0;
+    // 2.2: a finger on a touch screen closes popups too (raw touch events).
+    int event, error, major = 2, minor = 2;
     if (!XQueryExtension(input_display_, "XInputExtension", &input_opcode_, &event, &error) ||
         XIQueryVersion(input_display_, &major, &minor) != Success) {
       XCloseDisplay(input_display_);
       input_display_ = nullptr;
     } else {
-      unsigned char bits[XIMaskLen(XI_RawButtonPress)] = {};
+      unsigned char bits[XIMaskLen(XI_LASTEVENT)] = {};
       XISetMask(bits, XI_RawButtonPress);
+      if (major > 2 || minor >= 2) XISetMask(bits, XI_RawTouchBegin);
       XIEventMask mask{XIAllMasterDevices, int(sizeof bits), bits};
       XISelectEvents(input_display_, DefaultRootWindow(input_display_), &mask, 1);
       XFlush(input_display_);
@@ -591,13 +603,13 @@ void Panel::input_event(int, void *d) {
     XEvent event;
     XNextEvent(p->input_display_, &event);
     if (event.type == GenericEvent && event.xcookie.extension == p->input_opcode_ &&
-        event.xcookie.evtype == XI_RawButtonPress) {
+        (event.xcookie.evtype == XI_RawButtonPress || event.xcookie.evtype == XI_RawTouchBegin)) {
       unsigned long time = 0;
       int button = 1;
       if (XGetEventData(p->input_display_, &event.xcookie)) {
         auto *raw = static_cast<XIRawEvent *>(event.xcookie.data);
         time = raw->time;
-        button = raw->detail;
+        button = event.xcookie.evtype == XI_RawTouchBegin ? 1 : raw->detail;
         XFreeEventData(p->input_display_, &event.xcookie);
       }
       if (time > p->last_press_time_) p->last_press_time_ = time;
@@ -734,12 +746,13 @@ bool Panel::status_anchor(const std::string &section, int &center_x) const {
     }
   return false;
 }
+int Panel::status_step() const { return touch_targets_ ? S(40) : S(26); }
 int Panel::status_slot_x(int index) const {
-  if (index < 0 || index + 1 >= int(status_pos_.size())) return status_x_ + index * S(26);
+  if (index < 0 || index + 1 >= int(status_pos_.size())) return status_x_ + index * status_step();
   return status_x_ + status_pos_[size_t(index)];
 }
 int Panel::status_slot_w(int index) const {
-  if (index < 0 || index + 1 >= int(status_pos_.size())) return S(26);
+  if (index < 0 || index + 1 >= int(status_pos_.size())) return status_step();
   return status_pos_[size_t(index) + 1] - status_pos_[size_t(index)];
 }
 void Panel::open_flyout(const std::string &section) {
@@ -1269,7 +1282,7 @@ void Panel::relayout() {
   right = action_x_ - S(2);
   // alpha52: the notifications button (bell and unread count) between the
   // clock and the Action Center button; [panel] show_notifications.
-  notify_w_ = !safe_mode && cfg_.get_bool("panel", "show_notifications", true) ? S(32) : 0;
+  notify_w_ = !safe_mode && cfg_.get_bool("panel", "show_notifications", true) ? (touch_targets_ ? S(40) : S(32)) : 0;
   notify_x_ = right - notify_w_;
   right = notify_x_ - (notify_w_ ? S(2) : 0);
   text_font(theme_.font_size, false);
@@ -1328,7 +1341,7 @@ void Panel::relayout() {
                             "show_sound", "show_battery", "show_touchpad"})
       others += cfg_.get_bool("panel", key, true) ? 1 : 0;
     bool fits = right - start_w_ - S(100) >=
-                (others + 1) * S(26) + battery_extra + sn * (tray_icon_ + S(10)) + tw;
+                (others + 1) * status_step() + battery_extra + sn * (tray_icon_ + S(10)) + tw;
     tray_overflow_ = apps > 0 && cfg_.get_bool("panel", "show_tray", true) &&
                      (overflow_mode == "always" ||
                       (overflow_mode != "never" && (apps > threshold || !fits)));
@@ -1367,17 +1380,17 @@ void Panel::relayout() {
   for (size_t i = 0; battery_extra && i < battery_texts.size(); ++i) {
     battery_text_ = battery_texts[i];
     battery_extra = text_extra(battery_text_);
-    if (status_room >= int(status_icons_.size()) * S(26) + battery_extra + others) break;
+    if (status_room >= int(status_icons_.size()) * status_step() + battery_extra + others) break;
     if (i + 1 == battery_texts.size()) battery_extra = 0, battery_text_.clear();
   }
-  compact_status_ = status_room < int(status_icons_.size()) * S(26) + others;
+  compact_status_ = status_room < int(status_icons_.size()) * status_step() + others;
   if (compact_status_) status_icons_.clear(), battery_text_.clear();
   // While the Tray flyout holds the tray icons they leave the panel; the
   // status icons stay in place so the flyout stays above its button.
   bool moved = tray_host() != nullptr;
   status_pos_.assign(1, 0);
   for (StatusIcon icon : status_icons_)
-    status_pos_.push_back(status_pos_.back() + S(26) +
+    status_pos_.push_back(status_pos_.back() + status_step() +
                           (icon == BATTERY_STATUS && !battery_text_.empty() ? battery_extra : 0));
   status_w_ = status_pos_.back();
   status_x_ = right - status_w_;
@@ -1633,7 +1646,7 @@ void Panel::draw() {
     double gs = S(18), gy = (H - gs) / 2.;
     for (size_t i = 0; i < status_icons_.size(); ++i) {
       int bx = status_slot_x(int(i));
-      double gx = bx + S(4);
+      double gx = bx + (status_step() - S(18)) / 2;
       std::string section = status_section(status_icons_[i]);
       button_bg(bx, status_slot_w(int(i)), {STATUS, int(i)},
                 (flyout_ && flyout_->is_open() && flyout_->section() == section) ||
@@ -1822,7 +1835,8 @@ void Panel::draw() {
   // 0.2 Alpha 2: the battery's percentage or label after its icon.
   if (int bi = battery_text_.empty() ? -1 : status_index(BATTERY_STATUS); bi >= 0) {
     text_font(t.font_size, false);
-    draw_text(battery_text_, status_slot_x(bi) + S(24), 0, status_slot_w(bi) - S(26), H, t.text);
+    int pad = (status_step() - S(18)) / 2;  // the icon's slot, then the text
+    draw_text(battery_text_, status_slot_x(bi) + pad + S(20), 0, status_slot_w(bi) - pad - S(22), H, t.text);
   }
   bool show_date = cfg_.get_bool("panel", "show_date", true);
   clockface::draw_panel(clockface::Settings::from_config(cfg_), t, w(), h(), clock_x_, clock_w_,

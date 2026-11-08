@@ -21,6 +21,8 @@
 #include <string>
 #include <vector>
 
+#include "touch.h"
+
 namespace sde {
 
 class Config;
@@ -105,6 +107,7 @@ struct Theme {
   int font_size = 13;     // pixels used by FLTK (already scaled)
   int panel_height = 40;  // pixels (already scaled)
   int panel_size = 40;    // unscaled setting: 32, 40 or 48
+  TouchOptions touch;     // [touchscreen] (touch.h), handed to SDE-FLTK by apply_to_fltk()
   bool panel_top = false;
 
   // |style| is the family (kept for older code). |glass| is true for the

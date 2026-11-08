@@ -63,6 +63,18 @@
 #  include <cairo/cairo.h>
 #endif // FLTK_USE_CAIRO
 
+// SDE-FLTK: touch screens through XInput 2.2 (libXi is loaded at run time,
+// like libXrandr below); see FL/Fl_Touch.H.
+#  include <FL/Fl_Touch.H>
+#  if defined(__has_include) && HAVE_DLSYM && HAVE_DLFCN_H
+#    if __has_include(<X11/extensions/XInput2.h>)
+#      include <dlfcn.h>
+#      include <X11/extensions/XInput2.h>
+#      define SDE_FLTK_XI2 1
+static void xi2_init(Display *d);
+#    endif
+#  endif
+
 #define USE_XRANDR (HAVE_DLSYM && HAVE_DLFCN_H) // means attempt to dynamically load libXrandr.so
 #if USE_XRANDR
 #include <dlfcn.h>
@@ -129,6 +141,8 @@ static void do_queued_events() {
       continue;
     fl_handle(xevent);
   }
+  // SDE-FLTK: the finger movements of this batch, as one scroll step.
+  Fl_Touch::platform_flush();
   // we send FL_LEAVE only if the mouse did not enter some other window:
   if (!in_a_window) Fl::handle(FL_LEAVE, 0);
 #if FLTK_CONSOLIDATE_MOTION
@@ -665,6 +679,10 @@ void open_display_i(Display* d) {
 
   // Listen for changes to _NET_WORKAREA
   XSelectInput(d, RootWindow(d, fl_screen), PropertyChangeMask);
+
+#if SDE_FLTK_XI2
+  xi2_init(d);  // SDE-FLTK: touch screens
+#endif
 }
 
 void Fl_X11_Screen_Driver::close_display() {
@@ -1062,6 +1080,241 @@ static inline void checkdouble() {
 static Fl_Window* resize_bug_fix;
 
 ////////////////////////////////////////////////////////////////
+// SDE-FLTK: touch screens (FL/Fl_Touch.H).
+//
+// Windows select XInput 2.2 touch events, so the X server sends them the
+// touches instead of emulated mouse events; Fl_Touch turns the touches into
+// clicks, scrolls, context menus and zooms, and asks for mouse events with
+// fl_touch_pointer(), which hands fl_handle() the core events a mouse would
+// have produced.
+//
+// While a window of the program holds the pointer grab (panel popups), the
+// X server sends even touch-aware windows emulated mouse events. Raw touch
+// events, selected on the root window for the time of the grab, tell those
+// apart from the mouse, and they go to Fl_Touch too (one finger).
+
+static bool fl_touch_synthesizing = false;   // fl_handle() sees our own events
+#if SDE_FLTK_XI2
+static int fl_xi_opcode = -1;
+static bool fl_xi_touch = false;              // the server sends touch events
+typedef int (*XISelectEvents_type)(Display *, Window, XIEventMask *, int);
+typedef XIEventMask *(*XIGetSelectedEvents_type)(Display *, Window, int *);
+static XISelectEvents_type XISelectEvents_f = 0;
+static XIGetSelectedEvents_type XIGetSelectedEvents_f = 0;
+static int fl_raw_touches = 0;                // fingers down, from raw events (grabs)
+static bool fl_raw_selected = false;
+static bool fl_grab_touch = false;            // a grab-time touch is being followed
+
+static void xi2_init(Display *d) {
+  void *libxi = Fl_Posix_System_Driver::dlopen_or_dlsym("libXi");
+  int event, error;
+  if (!libxi || !XQueryExtension(d, "XInputExtension", &fl_xi_opcode, &event, &error)) {
+    fl_xi_opcode = -1;
+    return;
+  }
+  typedef Status (*XIQueryVersion_type)(Display *, int *, int *);
+  XIQueryVersion_type query = (XIQueryVersion_type)dlsym(libxi, "XIQueryVersion");
+  XISelectEvents_f = (XISelectEvents_type)dlsym(libxi, "XISelectEvents");
+  XIGetSelectedEvents_f = (XIGetSelectedEvents_type)dlsym(libxi, "XIGetSelectedEvents");
+  // The first XIQueryVersion of a connection decides its version: SDE code
+  // that uses XInput 2 on fl_display must ask for 2.2 as well (a lower
+  // version is refused with BadValue once 2.2 was announced).
+  int major = 2, minor = 2;
+  if (query && XISelectEvents_f && query(d, &major, &minor) == Success &&
+      (major > 2 || (major == 2 && minor >= 2)))
+    fl_xi_touch = true;
+}
+
+static void xi2_select_touch(Window xid, bool on) {
+  if (!fl_xi_touch || !xid) return;
+  unsigned char bits[XIMaskLen(XI_LASTEVENT)];
+  memset(bits, 0, sizeof bits);
+  if (on) {
+    XISetMask(bits, XI_TouchBegin);
+    XISetMask(bits, XI_TouchUpdate);
+    XISetMask(bits, XI_TouchEnd);
+  }
+  XIEventMask mask;
+  mask.deviceid = XIAllMasterDevices;
+  mask.mask_len = on ? (int)sizeof bits : 0;
+  mask.mask = bits;
+  XISelectEvents_f(fl_display, xid, &mask, 1);
+}
+
+// Raw touch events on the root window, added to (or taken from) what the
+// program selected there itself (the force-close watchdog: raw clicks).
+static void xi2_select_raw(bool on) {
+  if (!fl_xi_touch || on == fl_raw_selected || !XIGetSelectedEvents_f) return;
+  Window root = RootWindow(fl_display, fl_screen);
+  unsigned char bits[XIMaskLen(XI_LASTEVENT)];
+  memset(bits, 0, sizeof bits);
+  int n = 0;
+  XIEventMask *old = XIGetSelectedEvents_f(fl_display, root, &n);
+  for (int i = 0; old && i < n; i++)
+    if (old[i].deviceid == XIAllMasterDevices)
+      for (int b = 0; b < old[i].mask_len && b < (int)sizeof bits; b++) bits[b] = old[i].mask[b];
+  if (old) XFree(old);
+  if (on) {
+    XISetMask(bits, XI_RawTouchBegin);
+    XISetMask(bits, XI_RawTouchUpdate);
+    XISetMask(bits, XI_RawTouchEnd);
+  } else {
+    XIClearMask(bits, XI_RawTouchBegin);
+    XIClearMask(bits, XI_RawTouchUpdate);
+    XIClearMask(bits, XI_RawTouchEnd);
+  }
+  XIEventMask mask;
+  mask.deviceid = XIAllMasterDevices;
+  mask.mask_len = sizeof bits;
+  mask.mask = bits;
+  XISelectEvents_f(fl_display, root, &mask, 1);
+  fl_raw_selected = on;
+  if (!on) fl_raw_touches = 0;
+}
+
+// Touch and raw touch events. Returns 1 when the event was one of them.
+static int xi2_handle(XEvent &xevent) {
+  XGenericEventCookie *cookie = &xevent.xcookie;
+  int type = cookie->evtype;
+  bool touch = type == XI_TouchBegin || type == XI_TouchUpdate || type == XI_TouchEnd;
+  bool raw = type == XI_RawTouchBegin || type == XI_RawTouchEnd;
+  if (!touch && !raw) return 0;
+  if (!XGetEventData(fl_display, cookie)) return 0;
+  if (touch) {
+    XIDeviceEvent *de = (XIDeviceEvent *)cookie->data;
+    Fl_Window *window = fl_find(de->event);
+    fl_event_time = de->time;
+    if (window)
+      Fl_Touch::platform_event(window, type == XI_TouchBegin ? 0 : type == XI_TouchUpdate ? 1 : 2,
+                               de->detail, de->event_x, de->event_y, (double)de->time,
+                               de->mods.effective);
+  } else if (type == XI_RawTouchBegin) {
+    fl_raw_touches++;
+  } else if (fl_raw_touches > 0) {
+    fl_raw_touches--;
+  }
+  XFreeEventData(fl_display, cookie);
+  return 1;
+}
+#endif // SDE_FLTK_XI2
+
+bool fl_touch_platform_available() {
+#if SDE_FLTK_XI2
+  return fl_xi_touch;
+#else
+  return false;
+#endif
+}
+
+// Touch events for |win|, unless it keeps the X server's pointer
+// emulation (Fl_Window::touch_events(false)) or touch is off.
+static void fl_touch_select_window(Fl_Window *win, Window xid) {
+  Fl_Touch::platform_start();
+#if SDE_FLTK_XI2
+  if (fl_xi_touch && Fl_Touch::enabled() && win->touch_events()) xi2_select_touch(xid, true);
+#endif
+}
+
+void fl_touch_select_all(bool on) {
+#if SDE_FLTK_XI2
+  if (!fl_xi_touch) return;
+  for (Fl_X *i = Fl_X::first; i; i = i->next)
+    if (i->xid) xi2_select_touch(i->xid, on && i->w->touch_events());
+  if (!on) xi2_select_raw(false);
+  else if (Fl::grab()) xi2_select_raw(true);
+  XFlush(fl_display);
+#endif
+}
+
+// Called by Fl_X11_Screen_Driver::grab() when a grab starts or ends.
+void fl_touch_grab_changed(Fl_Window *grab) {
+#if SDE_FLTK_XI2
+  xi2_select_raw(grab && Fl_Touch::enabled());
+  if (!grab && fl_grab_touch) {
+    // The grab ended under the finger: its mouse events go to FLTK again.
+    fl_grab_touch = false;
+    Fl_Touch::platform_cancel();
+  }
+#endif
+}
+
+// A mouse event that the X server made from a touch while a window of ours
+// holds the pointer grab (see above): to Fl_Touch. Returns 1 if taken.
+static int fl_touch_grab_event(const XEvent &xevent) {
+#if SDE_FLTK_XI2
+  if (fl_touch_synthesizing || !fl_raw_selected) return 0;
+  Fl_Window *grab = Fl::grab();
+  if (!grab || grab->menu_window() || !grab->touch_events()) return 0;
+  int type = xevent.type;
+  if (type == ButtonPress) {
+    if (xevent.xbutton.button != Button1 || fl_raw_touches <= 0 || fl_grab_touch) return 0;
+    fl_grab_touch = true;
+  } else if (!fl_grab_touch) {
+    return 0;  // the finger touched before the grab: the mouse events go on
+  } else if (type == ButtonRelease && xevent.xbutton.button != Button1) {
+    return 0;
+  }
+  Fl_Window *window = fl_find(xevent.xany.window);
+  if (!window) window = grab;
+  fl_event_time = xevent.xbutton.time;
+  int what = type == ButtonPress ? 0 : type == MotionNotify ? 1 : 2;
+  if (type == ButtonRelease) fl_grab_touch = false;
+  Fl_Touch::platform_event(window, what, -1, xevent.xbutton.x, xevent.xbutton.y,
+                           (double)xevent.xbutton.time, xevent.xbutton.state & 0xff);
+  return 1;
+#else
+  return 0;
+#endif
+}
+
+void fl_touch_pointer(Fl_Window *win, int what, int button, int x, int y,
+                      unsigned long server_time, unsigned state, int clicks, int keep_click) {
+  Window xid = win ? fl_xid(win) : 0;
+  if (!xid) return;
+  XEvent xe;
+  memset(&xe, 0, sizeof xe);
+  int rx = win->x_root() + x, ry = win->y_root() + y;
+  unsigned mods = state & 0xff;  // Shift, Lock, Control, Mod1 to Mod5
+  unsigned held = (button >= 1 && button <= 3) ? (Button1Mask << (button - 1)) : 0;
+  xe.xbutton.type = what == 0 ? MotionNotify : what == 1 ? ButtonPress : ButtonRelease;
+  xe.xbutton.display = fl_display;
+  xe.xbutton.window = xid;
+  xe.xbutton.root = RootWindow(fl_display, fl_screen);
+  xe.xbutton.time = server_time ? server_time : fl_event_time;
+  xe.xbutton.x = x;
+  xe.xbutton.y = y;
+  xe.xbutton.x_root = rx;
+  xe.xbutton.y_root = ry;
+  xe.xbutton.same_screen = True;
+  // X reports the buttons held before the event.
+  xe.xbutton.state = mods | (what == 1 ? 0 : held);
+  xe.xbutton.button = button;
+  if (what == 1) {
+    // FLTK's double click test (checkdouble()) counts presses of the same
+    // button close in time and place: the gesture recognizer decided.
+    px = rx;
+    py = ry;
+    ptime = xe.xbutton.time;
+    if (clicks > 0) {
+      Fl::e_is_click = FL_Button + button;
+      Fl::e_keysym = FL_Button + button;
+      Fl::e_clicks = clicks - 1;
+    } else {
+      Fl::e_is_click = 0;
+    }
+  } else if (what == 2) {
+    px = rx;
+    py = ry;
+    ptime = xe.xbutton.time;
+    Fl::e_is_click = keep_click ? FL_Button + button : 0;
+  }
+  bool old = fl_touch_synthesizing;
+  fl_touch_synthesizing = true;
+  fl_handle(xe);
+  fl_touch_synthesizing = old;
+}
+
+////////////////////////////////////////////////////////////////
 
 static char unknown[] = "<unknown>";
 const int unknown_len = 10;
@@ -1315,6 +1568,17 @@ int fl_handle(const XEvent& thisevent)
   XEvent xevent = thisevent;
   fl_xevent = &thisevent;
   Window xid = xevent.xany.window;
+
+#if SDE_FLTK_XI2
+  // SDE-FLTK: touch screens (see fl_touch_pointer() above).
+  if (xevent.type == GenericEvent) {
+    if (xevent.xcookie.extension == fl_xi_opcode) return xi2_handle(xevent);
+    return 0;
+  }
+  if ((xevent.type == ButtonPress || xevent.type == ButtonRelease || xevent.type == MotionNotify) &&
+      fl_touch_grab_event(xevent))
+    return 1;
+#endif
 
   // For each DestroyNotify event, determine whether an FLTK-created window
   // is being destroyed (see issue #935).
@@ -2727,6 +2991,7 @@ void Fl_X::make_xid(Fl_Window* win, XVisualInfo *visual, Colormap colormap)
                                visual->visual,
                                mask, &attr));
   int showit = 1;
+  fl_touch_select_window(win, xp->xid);  // SDE-FLTK: touch events (FL/Fl_Touch.H)
 
   // Set WM_CLIENT_MACHINE and WM_LOCALE_NAME
   XSetWMProperties(fl_display, xp->xid, NULL, NULL, NULL, 0, NULL, NULL, NULL);

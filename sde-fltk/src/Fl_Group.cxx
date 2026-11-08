@@ -21,6 +21,7 @@
 // handling is designed so windows themselves work correctly.
 
 #include <FL/Fl_Group.H>
+#include <FL/Fl_Touch.H>
 #include "Fl_Window_Driver.H"
 #include <FL/Fl_Rect.H>
 #include <FL/fl_draw.H>
@@ -259,6 +260,16 @@ int Fl_Group::handle(int event) {
     }
     return 0;
 
+  case FL_SCROLL_GESTURE:
+    // SDE-FLTK: touch gestures go to the widget under the finger and then to
+    // its parents, one at a time (FL/Fl_Touch.H): a group only takes them
+    // when it scrolls or zooms itself.
+    return 0;
+
+  case FL_ZOOM_GESTURE:
+    if (Fl_Touch::event_is_touch()) return 0;  // see FL_SCROLL_GESTURE
+    goto DEFAULT;
+
   case FL_DEACTIVATE:
   case FL_ACTIVATE:
     for (i = children(); i--;) {
@@ -283,6 +294,7 @@ int Fl_Group::handle(int event) {
     return 1;
 
   default:
+  DEFAULT:
     // For all other events, try to give to each child, starting at focus:
     for (i = 0; i < children(); i ++)
       if (Fl::focus_ == a[i]) break;

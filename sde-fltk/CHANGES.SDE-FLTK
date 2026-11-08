@@ -1,6 +1,28 @@
 SDE-FLTK changes (Selviana DE Project)
 
-Unreleased (SDE 0.2.0 Alpha 3.1)
+Unreleased (SDE 0.2.0 Alpha 4)
+  - Touch screens (FL/Fl_Touch.H, docs/TOUCH.md in SDE). X11 with XInput
+    2.2: windows select touch events, so the X server no longer turns
+    touches into mouse events for them, and SDE-FLTK makes the gestures:
+    a tap is a click (taps in quick succession a double click), a moving
+    finger scrolls (FL_SCROLL_GESTURE to the widget under the finger, then
+    its parents, with momentum after a flick that stops at the end of the
+    content), a long press or a two-finger tap is a right click, two
+    fingers pinch (FL_ZOOM_GESTURE). Sliders, scroll bars and widgets with
+    Fl_Widget::touch_drag() follow a finger along their axis; a drag that
+    nothing scrolls for is a mouse drag, except on text, which a finger
+    does not select. Fl_Scroll, Fl_Browser_ and Fl_Text_Display scroll.
+    Fl_Window::touch_events(false) keeps the X server's pointer emulation
+    (windows that embed windows of other programs). While a window of the
+    program holds the pointer grab, the emulated mouse events of a finger
+    (told apart by raw touch events) go through the gestures too. libXi is
+    loaded at run time; without XInput 2.2 nothing changes. The mouse and
+    touchpads never produce touch events and behave as before.
+    Fl_Touch_Gesture, the recognizer, has no X11 or widget code and is
+    tested with event sequences (SDE tests/test_touch.cpp).
+  - The first XIQueryVersion on fl_display asks for XInput 2.2: code that
+    uses XInput 2 on the same connection must not ask for less (the X
+    server refuses a lower version with BadValue once 2.2 was announced).
   - X11: top-level windows answer _NET_WM_PING (EWMH). WM_PROTOCOLS lists
     it next to WM_DELETE_WINDOW, and fl_handle() sends the ping back to the
     root window as the specification says, from the event loop. SDE's

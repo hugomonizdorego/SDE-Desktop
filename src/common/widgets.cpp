@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 #include "i18n.h"
 #include "theme.h"
@@ -157,6 +158,9 @@ Switch::Switch(int x, int y, int w, int h, const char *label) : Fl_Button(x, y, 
   type(FL_TOGGLE_BUTTON);
   box(FL_NO_BOX);
   down_box(FL_NO_BOX);
+  // A finger that moves sideways from the switch drags it; up and down it
+  // scrolls the page.
+  touch_drag(FL_TOUCH_DRAG_X);
 }
 
 void Switch::draw() {
@@ -198,6 +202,32 @@ int Switch::handle(int event) {
     set_changed();
     do_callback();
     return 1;
+  }
+  if (touch_event() && (event == FL_PUSH || event == FL_DRAG || event == FL_RELEASE)) {
+    // A finger: a tap toggles; a drag moves the knob to the side the finger
+    // ends on (the mouse keeps Fl_Button's clicks).
+    double sw = Sd(40), mid = x() + w() - sw / 2;
+    switch (event) {
+      case FL_PUSH:
+        touch_x_ = Fl::event_x();
+        touch_dragged_ = false;
+        touch_start_ = value();
+        return 1;
+      case FL_DRAG:
+        if (std::abs(Fl::event_x() - touch_x_) > S(6)) touch_dragged_ = true;
+        if (touch_dragged_ && value() != (Fl::event_x() >= mid ? 1 : 0)) {
+          value(Fl::event_x() >= mid ? 1 : 0);
+          redraw();
+        }
+        return 1;
+      default:
+        if (!touch_dragged_) value(!touch_start_);
+        if (value() != touch_start_) {
+          set_changed();
+          do_callback();
+        }
+        return 1;
+    }
   }
   return Fl_Button::handle(event);
 }

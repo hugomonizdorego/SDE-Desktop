@@ -44,12 +44,18 @@ class Slider : public Fl_Slider {
 // "25 %": a percentage with the space SDE's labels use.
 std::string percent_text(double percent);
 
-// On/off switch; value() is the state.
+// On/off switch; value() is the state. A finger can also drag its knob
+// across (docs/TOUCH.md).
 class Switch : public Fl_Button {
  public:
   Switch(int x, int y, int w, int h, const char *label = nullptr);
   void draw() override;
   int handle(int event) override;
+
+ private:
+  int touch_x_ = 0;
+  bool touch_dragged_ = false;
+  char touch_start_ = 0;
 };
 
 // Rounded push button. primary uses the accent color.

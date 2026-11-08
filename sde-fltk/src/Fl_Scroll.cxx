@@ -554,7 +554,38 @@ Fl_Scroll::Fl_Scroll(int X, int Y, int W, int H, const char *L)
   scrollbar.callback(scrollbar_cb);
 }
 
+// SDE-FLTK: one axis of a touch scroll (FL_SCROLL_GESTURE): the new
+// position, and whether the content can move that way at all.
+static int touch_axis(int pos, int delta, int needed, int first, int total, int size, int &moved) {
+  if (!delta || !needed) return pos;
+  int lo = first, hi = first + total - size;
+  if (hi < lo) hi = lo;
+  int p = pos + delta;
+  if (p < lo) p = lo;
+  if (p > hi) p = hi;
+  if ((delta > 0 && pos < hi) || (delta < 0 && pos > lo)) moved = 1;
+  return p;
+}
+
 int Fl_Scroll::handle(int event) {
   fix_scrollbar_order();
+  if (event == FL_SCROLL_GESTURE) {
+    // SDE-FLTK: a finger scrolls (FL/Fl_Touch.H).
+    ScrollInfo si;
+    recalc_scrollbars(si);
+    int can = 0;
+    int nx = touch_axis(si.hscroll.pos, Fl::event_dx(), si.hneeded, si.hscroll.first,
+                        si.hscroll.total, si.hscroll.size, can);
+    int ny = touch_axis(si.vscroll.pos, Fl::event_dy(), si.vneeded, si.vscroll.first,
+                        si.vscroll.total, si.vscroll.size, can);
+    if (nx != si.hscroll.pos || ny != si.vscroll.pos) {
+      // relative to where the children are (xposition() is only updated by draw())
+      scroll_to(xposition_ + nx - si.hscroll.pos, yposition_ + ny - si.vscroll.pos);
+      // keep the scroll bars with the content until the next draw()
+      scrollbar.value(ny, si.vscroll.size, si.vscroll.first, si.vscroll.total);
+      hscrollbar.value(nx, si.hscroll.size, si.hscroll.first, si.hscroll.total);
+    }
+    return can || (!Fl::event_dx() && !Fl::event_dy());
+  }
   return Fl_Group::handle(event);
 }

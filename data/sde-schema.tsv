@@ -150,6 +150,12 @@ touchpad	enabled	bool		touchpad
 touchpad	tap_drag	bool		touchpad
 touchpad	scroll	enum	two-finger|edge|none	touchpad
 touchpad	click	enum	areas|clickfinger	touchpad
+touchscreen	gestures	bool		touch
+touchscreen	show_touches	bool		touch
+touchscreen	output	text		touch
+touchscreen	keyboard	enum	auto|off	touch
+touchscreen	long_press	int	200..2000	touch
+touchscreen	large_targets	enum	auto|true|false
 
 force_close	mark_after	int	1..3600
 force_close	timeout	int	1..86400

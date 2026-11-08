@@ -574,3 +574,25 @@ if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
     ${CMAKE_CURRENT_SOURCE_DIR}/test_force_close_ui.py ${CMAKE_BINARY_DIR} ${SDE_FORCE_CLOSE_WM})
   set_tests_properties(sde-force-close-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
 endif()
+
+# 0.2.0 Alpha 4: touch screens (sde-fltk/FL/Fl_Touch.H, docs/TOUCH.md): the
+# gesture recognizer fed with touch sequences, without a display.
+add_executable(sde-touch-tests test_touch.cpp)
+target_link_libraries(sde-touch-tests PRIVATE sde-common)
+add_test(NAME sde-touch-gestures COMMAND sde-touch-tests)
+# ... and on Xvfb: the XInput 2.2 selection, taps, scrolling and momentum of
+# stock widgets, long press, double tap, pinch and the mouse unchanged.
+add_executable(sde-touch-probe touch_probe.cpp)
+target_link_libraries(sde-touch-probe PRIVATE sde-common)
+if(SDE_XVFB)
+  add_test(NAME sde-touch-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_touch_ui.py
+    $<TARGET_FILE:sde-touch-probe> $<TARGET_FILE:sde-touchscreen>)
+  set_tests_properties(sde-touch-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+endif()
+# ... and the scroll of a Control Center page by moving pixels (paint.cpp):
+# pixel-identical to a full repaint at 100 % and 200 %.
+if(SDE_XVFB)
+  add_test(NAME sde-scroll-blit COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_scroll_blit.py
+    $<TARGET_FILE:sde-settings>)
+  set_tests_properties(sde-scroll-blit PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()

@@ -1196,7 +1196,9 @@ void AppMenu::layout_list() {
     }
     return;
   }
-  int row_h = compact_ ? S(32) : S(36), head_h = compact_ ? S(28) : S(32);
+  // Rows of at least 40 px at 100 % for fingers (docs/TOUCH.md).
+  int row_h = large_touch_targets(Panel::instance->config()) ? S(40) : compact_ ? S(32) : S(36);
+  int head_h = compact_ ? S(28) : S(32);
   int x = list_x_ + S(4), rw = list_w_ - S(14);
   std::vector<Item> rows;
   int y = 0;
@@ -3034,6 +3036,18 @@ int AppMenu::handle(int event) {
       if (!a) a = area(ex >= tiles_x_ ? K_TILE : K_ROW);
       if (a) scroll_by(a->kind, dy * (compact_ ? S(64) : S(72)));
       return 1;
+    }
+    case FL_SCROLL_GESTURE: {
+      // A finger moves the list or the tiles it touched, with it and at once
+      // (docs/TOUCH.md); 0 when that area cannot move that way.
+      if (menu_busy_) return 0;
+      build_items();
+      const Area *a = area_at(Fl::event_x(), Fl::event_y());
+      if (!a || !a->scrolls() || !a->scroll) return 0;
+      int pos = *a->scroll, max = std::max(0, a->content - a->h);
+      int can = sde::touch_scroll_y(pos, max);
+      if (pos != *a->scroll) scroll_to(a->kind, pos, false);
+      return can;
     }
     case FL_KEYUP: {
       // Super pressed and released alone closes the menu, as Super opened

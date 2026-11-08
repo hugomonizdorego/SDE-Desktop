@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=SDE Touch Screen
+Comment=Keeps touch screens on their display and shows touches
+Exec=sde-touchscreen
+TryExec=sde-touchscreen
+OnlyShowIn=SDE;
+NoDisplay=true

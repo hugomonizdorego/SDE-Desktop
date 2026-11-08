@@ -16,6 +16,12 @@ export XDG_MENU_PREFIX="${XDG_MENU_PREFIX:-}"
 # follows the theme and accent chosen in Settings) unless the user chose
 # another platform theme (qt5ct, ...).
 export QT_QPA_PLATFORMTHEME="${QT_QPA_PLATFORMTHEME:-gtk3}"
+# Touch screens (docs/TOUCH.md). SDE programs take touches through XInput
+# 2.2 themselves; Firefox does on X11 only with MOZ_USE_XINPUT2=1 (otherwise
+# a finger selects text instead of scrolling). GTK and Qt use XInput 2 by
+# default; these variables would turn it off, and touch with it.
+export MOZ_USE_XINPUT2="${MOZ_USE_XINPUT2:-1}"
+unset GDK_CORE_DEVICE_EVENTS QT_XCB_NO_XI2
 
 # Make sure the XDG base directories exist.
 : "${XDG_CONFIG_HOME:=$HOME/.config}"
@@ -104,7 +110,8 @@ fi
 if command -v dbus-update-activation-environment >/dev/null 2>&1; then
     # shellcheck disable=SC2086
     dbus-update-activation-environment --systemd DISPLAY XAUTHORITY \
-        XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION XDG_DATA_DIRS $proxy_vars 2>/dev/null || true
+        XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION XDG_DATA_DIRS MOZ_USE_XINPUT2 \
+        $proxy_vars 2>/dev/null || true
 fi
 
 # Mounting USB drives (UDisks2) and the power actions need an active local

@@ -1987,6 +1987,7 @@ PAGE_CAPTIONS = {
     'display': 'monitors, resolution and the interface size',
     'input': 'keyboard layouts and the mouse',
     'touchpad': 'tap to click, scrolling and speed',
+    'touch': 'touch screen gestures, the display it drives, showing touches and the on-screen keyboard',
     'sound': 'output and input devices and volume',
     'network': 'connections, Wi-Fi and proxy',
     'bluetooth': 'adapter and devices',

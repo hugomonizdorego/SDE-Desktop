@@ -4,6 +4,7 @@
 // The thumbnail grid: month sections, smooth scrolling, selection and
 // keyboard navigation.
 #include <FL/Fl.H>
+#include <FL/Fl_Touch.H>
 #include <FL/Fl_Menu_Item.H>
 #include <FL/fl_draw.H>
 
@@ -534,6 +535,19 @@ int Grid::handle(int event) {
       animate();
       return 1;
     }
+    case FL_SCROLL_GESTURE: {
+      // A finger moves the photos with it, at once (docs/TOUCH.md).
+      double pos = target_;
+      int can = sde::touch_scroll_y(pos, max_scroll());
+      if (pos != scroll_ || pos != target_) {
+        scroll_ = target_ = pos;
+        redraw();
+      }
+      return can;
+    }
+    case FL_ZOOM_GESTURE:  // two fingers change the size of the photos
+      app_->set_zoom(int(std::lround(app_->zoom() * Fl_Touch::zoom_factor())));
+      return 1;
     case FL_PUSH: {
       if (Fl::focus() != this) Fl::focus(this);
       keyboard_used_ = false;

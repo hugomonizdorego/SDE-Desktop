@@ -515,6 +515,7 @@ Theme Theme::from_config(const Config &cfg) {
   if (sc == "auto" || sc.empty()) set_ui_scale(auto_scale());
   else set_ui_scale(cfg.get_int("appearance", "scale", 100) / 100.0);
   t.scale = ui_scale();
+  t.touch = load_touch_options(cfg);
   ThemeChoice c = theme_choice(cfg);
   t.mode = c.mode;
   t.dark = theme_mode_dark(c.mode);
@@ -575,6 +576,8 @@ void Theme::apply_to_fltk() const {
   Fl::set_font(FL_HELVETICA, regular.c_str());
   Fl::set_font(FL_HELVETICA_BOLD, bold.c_str());
   FL_NORMAL_SIZE = font_size;
+  // Touch screens: gestures, long press and distances at this scale.
+  apply_touch_to_toolkit(touch, scale);
 }
 
 }  // namespace sde

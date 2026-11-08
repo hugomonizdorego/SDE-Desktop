@@ -111,6 +111,8 @@ set(CPPFILES
   Fl_Tiled_Image.cxx
   Fl_Timeout.cxx
   Fl_Tooltip.cxx
+  Fl_Touch.cxx
+  Fl_Touch_Gesture.cxx
   Fl_Tree.cxx
   Fl_Tree_Item_Array.cxx
   Fl_Tree_Item.cxx

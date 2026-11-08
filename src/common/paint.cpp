@@ -4,6 +4,7 @@
 #include "paint.h"
 
 #include <FL/Fl.H>
+#include <FL/Fl_Scroll.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
 #include <cairo-xlib.h>
@@ -317,6 +318,47 @@ void draw_text(const std::string &s, int x, int y, int w, int h, const Color &c,
 
 // ------------------------------------------------------------ BufferedWindow
 
+namespace {
+bool opaque_box(Fl_Boxtype b) {
+  return b == FL_FLAT_BOX || b == FL_UP_BOX || b == FL_DOWN_BOX || b == FL_THIN_UP_BOX ||
+         b == FL_THIN_DOWN_BOX || b == FL_BORDER_BOX || b == FL_ENGRAVED_BOX || b == FL_EMBOSSED_BOX;
+}
+
+// 0.2.0 Alpha 4 (docs/TOUCH.md, "Lag"): when the only change in |g| is that
+// an Fl_Scroll with an opaque box scrolled (a finger, the wheel, its scroll
+// bar), that Fl_Scroll; else nullptr. |other|: something else changed too.
+Fl_Scroll *scrolled_only(Fl_Group *g, bool &other) {
+  Fl_Scroll *found = nullptr;
+  for (int i = 0; i < g->children() && !other; ++i) {
+    Fl_Widget *c = g->child(i);
+    uchar d = c->damage();
+    if (!d || !c->visible()) continue;
+    auto *s = dynamic_cast<Fl_Scroll *>(c);
+    if (s && (d & FL_DAMAGE_SCROLL) && !(d & ~(FL_DAMAGE_SCROLL | FL_DAMAGE_CHILD)) && opaque_box(s->box())) {
+      // Its scroll bars may be redrawn with it; a changed child in view would
+      // need the background under it. Children out of view keep the damage
+      // they got before they were ever drawn: they are drawn when they come
+      // into view.
+      int bx = s->x(), by = s->y(), bw = s->w(), bh = s->h();
+      for (int k = 0; k < s->children(); ++k) {
+        Fl_Widget *o = s->child(k);
+        if (!o->damage() || o == &s->scrollbar || o == &s->hscrollbar || !o->visible()) continue;
+        if (o->x() < bx + bw && o->x() + o->w() > bx && o->y() < by + bh && o->y() + o->h() > by) other = true;
+      }
+      if (found) other = true;
+      found = s;
+    } else if (d == FL_DAMAGE_CHILD && c->as_group() && !c->as_window()) {
+      Fl_Scroll *inner = scrolled_only(c->as_group(), other);
+      if (inner && found) other = true;
+      if (inner) found = inner;
+    } else {
+      other = true;
+    }
+  }
+  return other ? nullptr : found;
+}
+}  // namespace
+
 void BufferedWindow::flush() {
   if (!shown()) return;
   make_current();
@@ -350,6 +392,35 @@ void BufferedWindow::flush() {
   if (region) XDestroyRegion(static_cast<Region>(region));
 
   uchar d = damage();
+  // Scrolling (0.2.0 Alpha 4): repainting the whole area of a scrolled page
+  // cost up to 25 ms per frame at 2880x1800 and 200 %, slower than the
+  // finger. FLTK's Fl_Scroll moves the pixels that stay within the back
+  // buffer and draws only the strip that comes into view.
+  // UI tests read what windows dump of their controls while they draw
+  // (SDE_PANEL_QA_DIR): with them every frame is drawn, as before.
+  static const bool qa = getenv("SDE_PANEL_QA_DIR") != nullptr;
+  bool other = false;
+  Fl_Scroll *scrolled =
+      !fresh && !qa && d == FL_DAMAGE_CHILD && partial_enabled() ? scrolled_only(this, other) : nullptr;
+  if (scrolled) {
+    int sx = scrolled->x(), sy = scrolled->y(), sw = scrolled->w(), sh = scrolled->h();
+    if (stats) {
+      ++perf::counters().partial;
+      perf::counters().px += (unsigned long long)sw * sh;
+    }
+    fl_begin_offscreen(buffer_);
+    Painter::begin_target(buffer_, w(), h());
+    fl_push_clip(sx, sy, sw, sh);
+    static_cast<Fl_Widget *>(scrolled)->draw();  // Fl_Scroll::draw() is protected
+    fl_pop_clip();
+    Painter::end_target();
+    fl_end_offscreen();
+    for (Fl_Widget *o = scrolled; o && o != this; o = o->parent()) o->clear_damage();
+    clear_damage();
+    if (stats) perf::counters().draw_ms += perf::now_ms() - t0;
+    fl_copy_offscreen(sx, sy, sw, sh, buffer_, sx, sy);
+    return;
+  }
   if (fresh || (d & ~FL_DAMAGE_EXPOSE)) {
     if (clipped && partial_enabled()) {
       // Grow child damage a little: focus rings, outlines and shadows are

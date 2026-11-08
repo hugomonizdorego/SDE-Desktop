@@ -221,6 +221,9 @@ class Panel : public sde::BufferedWindow {
   std::vector<int> status_pos_;
   int status_slot_x(int index) const;
   int status_slot_w(int index) const;
+  // Width of a status icon's slot: 40 px at 100 % for fingers (touch.h).
+  int status_step() const;
+  bool touch_targets_ = false;
   static std::string status_section(StatusIcon icon);
   // Root x of the center of the visible status icon for |section|.
   bool status_anchor(const std::string &section, int &center_x) const;

@@ -30,7 +30,7 @@ def stub(path, text):
 
 
 class StartsdeEnvironment(unittest.TestCase):
-    def run_startsde(self, data_dirs=None, flatpak='', path_extra=''):
+    def run_startsde(self, data_dirs=None, flatpak='', path_extra='', extra_env=None):
         tmp = Path(tempfile.mkdtemp(prefix='sde-session-env-'))
         self.addCleanup(shutil.rmtree, tmp, True)
         home, bin_dir = tmp / 'home', tmp / 'bin'
@@ -47,6 +47,7 @@ class StartsdeEnvironment(unittest.TestCase):
                'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/nonexistent', 'XDG_SESSION_ID': '1'}
         if data_dirs is not None:
             env['XDG_DATA_DIRS'] = data_dirs
+        env.update(extra_env or {})
         sp.run(['sh', str(STARTSDE)], env=env, check=True, timeout=30)
         values = dict(line.split('=', 1) for line in out.read_text().splitlines() if '=' in line)
         return home, values, (tmp / 'dbus.txt').read_text()
@@ -74,6 +75,18 @@ class StartsdeEnvironment(unittest.TestCase):
         self.assertEqual(env['XDG_DATA_DIRS'].split(':'), [
             str(home / '.local/share/flatpak/exports/share'), '/var/lib/flatpak/exports/share', '/usr/share',
             '/var/lib/snapd/desktop'])
+
+    def test_touch(self):
+        # Firefox takes touches on X11 with XInput 2 only; variables that turn
+        # XInput 2 off in GTK and Qt (and touch with it) are not passed on.
+        _, env, dbus = self.run_startsde(extra_env={'GDK_CORE_DEVICE_EVENTS': '1', 'QT_XCB_NO_XI2': '1'})
+        self.assertEqual(env.get('MOZ_USE_XINPUT2'), '1')
+        self.assertNotIn('GDK_CORE_DEVICE_EVENTS', env)
+        self.assertNotIn('QT_XCB_NO_XI2', env)
+        self.assertIn('MOZ_USE_XINPUT2', dbus.split())
+        # A user's own choice stays.
+        _, env, _ = self.run_startsde(extra_env={'MOZ_USE_XINPUT2': '0'})
+        self.assertEqual(env.get('MOZ_USE_XINPUT2'), '0')
 
 
 if __name__ == '__main__':
