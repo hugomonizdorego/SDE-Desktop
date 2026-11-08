@@ -203,6 +203,10 @@ void build_clock_page(Page *page) {
                    });
   page->note(_("LED draws seven-segment digits. Right-click the clock on the panel or in the "
                "Action Center to change the style, seconds and the blinking colon from there."));
+  // 0.2.0 Alpha 4: the only page with the clock's settings (the Panel and
+  // the Action Center pages had their own copies); the time zone is in
+  // Date & Time.
+  link_row(page, _("Time zone and network time"), _("Date & Time"), "date-time");
   page->end_card();
 
   weather::Settings ws = weather::Settings::from_config(cfg);

@@ -174,6 +174,14 @@ void build_power_page(Page *page) {
   // "--page battery" (the battery icon's menu) opens the page here.
   page->anchor("battery");
   page->begin_card(_("Battery"));
+  // 0.2.0 Alpha 4: everything about the battery on the panel is here (the
+  // icon itself was on the Panel page).
+  page->switch_row(_("Show the battery on the panel"), cfg.get_bool("panel", "show_battery", true),
+                   [](bool v) {
+                     settings_config().set("panel", "show_battery", v ? "true" : "false");
+                     apply_change();
+                   },
+                   _("On laptops and tablets."));
   // 0.2 Alpha 2: what follows the battery icon on the panel (its right-click
   // menu has the same choices).
   std::string shown = lower(trim(cfg.get("panel", "battery_display", "icon")));

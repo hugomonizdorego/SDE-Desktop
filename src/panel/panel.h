@@ -174,6 +174,7 @@ class Panel : public sde::BufferedWindow {
   };
 
   void load_config();
+  void settings_changed();  // sde-core's Changed (core_client.h)
   std::string status_tooltip(StatusIcon icon) const;
   // Tooltips of the panel's parts (see tooltip_text.h): the text for the
   // hovered target, handed to Fl_Tooltip for that target's rectangle.

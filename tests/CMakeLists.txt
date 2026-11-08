@@ -100,6 +100,17 @@ if(SDE_DBUS_RUN_SESSION)
   add_test(NAME sde-dbus-timeouts COMMAND ${SDE_DBUS_RUN_SESSION} -- $<TARGET_FILE:sde-dbus-timeout-tests>)
   set_tests_properties(sde-dbus-timeouts PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
 endif()
+# 0.2.0 Alpha 4: the SDE core controller (docs/CORE.md), sde-core on a
+# private bus and Xvfb, and its client through sde-core-probe (not
+# installed). The Rust logic is in sde-rust-tests.
+add_executable(sde-core-probe core_probe.cpp)
+target_link_libraries(sde-core-probe PRIVATE sde-common)
+if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
+  add_test(NAME sde-core-service COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_core.py $<TARGET_FILE:sde-core> $<TARGET_FILE:sde-core-probe>
+    $<TARGET_FILE:sde-settings>)
+  set_tests_properties(sde-core-service PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+endif()
 # The FileChooser portal backend (xdg-desktop-portal-sde) on a private bus.
 if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
   add_test(NAME sde-file-chooser-portal COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
@@ -127,6 +138,10 @@ add_test(NAME sde-sysmon-parsers COMMAND sde-sysmon-tests)
 add_executable(sde-settings-tests test_settings.cpp)
 target_link_libraries(sde-settings-tests PRIVATE sde-settings-model)
 add_test(NAME sde-settings-model COMMAND sde-settings-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/pci.ids)
+# 0.2.0 Alpha 4: every sde.conf key is edited on one page of the Control
+# Center only, and the overview's search finds the settings that moved
+# (reads the sources; docs/CONTROL-CENTER.md "One place for each setting").
+add_test(NAME sde-settings-pages COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_settings_pages.py)
 # Control Center > Users & Avatar: user names, passwords and their hashes,
 # the administrator rules, AccountsService calls and passwd(1).
 add_executable(sde-accounts-tests test_accounts.cpp)

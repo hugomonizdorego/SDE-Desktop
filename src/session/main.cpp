@@ -45,6 +45,7 @@
 #include "about.h"
 #include "build_config.h"
 #include "config.h"
+#include "core_link.h"
 #include "desktop_entry.h"
 #include "i18n.h"
 #include "launches.h"
@@ -162,6 +163,7 @@ void start_component(Component &c) {
   c.pid = start_child(c.argv);
   c.starts.push_back(time(nullptr));
   while (int(c.starts.size()) > c.max_restarts) c.starts.pop_front();
+  if (c.pid > 0) core_link::report("component-started", c.pid, c.name, "", "");
   if (c.pid <= 0) {
     log("cannot start %s: %s was not found", c.name.c_str(), c.argv[0].c_str());
     c.given_up = true;
@@ -192,10 +194,14 @@ void on_program_exit(pid_t pid, int status) {
   launches::Record r;
   if (!launches::load(long(pid), r)) return;
   launches::remove(long(pid));
-  if (!WIFSIGNALED(status) || !crash_signal(WTERMSIG(status))) return;
-  char why[128];
   std::string name = r.name.empty() && !r.argv.empty() ? basename_of(r.argv[0]) : r.name;
+  if (!WIFSIGNALED(status) || !crash_signal(WTERMSIG(status))) {
+    core_link::report("ended", pid, name, r.desktop_id, "");
+    return;
+  }
+  char why[128];
   log("%s exited (%s)", name.c_str(), exit_reason(status, why, sizeof why));
+  core_link::report("crashed", pid, name, r.desktop_id, std::to_string(WTERMSIG(status)));
   std::vector<std::string> cmd = {"sde-force-close", "--crashed", "--name", name, "--icon", r.icon,
                                   "--desktop-id", r.desktop_id, "--signal",
                                   std::to_string(WTERMSIG(status)), "--"};
@@ -215,9 +221,11 @@ void on_child_exit(pid_t pid, int status) {
     if (c.pid != pid) continue;
     c.pid = 0;
     bool crashed = !WIFEXITED(status) || WEXITSTATUS(status) != 0;
-    if (!crashed && !c.essential) return;
     char why[128];
-    log("%s exited (%s)", c.name.c_str(), exit_reason(status, why, sizeof why));
+    exit_reason(status, why, sizeof why);
+    core_link::report(crashed ? "component-crashed" : "component-stopped", pid, c.name, "", why);
+    if (!crashed && !c.essential) return;
+    log("%s exited (%s)", c.name.c_str(), why);
     time_t now = time(nullptr);
     if (crashed && !c.fallback.empty() && ++c.crashes >= c.fallback_after) {
       log("starting %s with its fallback configuration", c.name.c_str());
@@ -234,6 +242,7 @@ void on_child_exit(pid_t pid, int status) {
     if (int(c.starts.size()) >= c.max_restarts && now - c.starts.front() < 60) {
       log("%s keeps failing; not restarting it again", c.name.c_str());
       c.given_up = true;
+      core_link::report("component-given-up", 0, c.name, "", why);
       if (c.critical)
         show_rescue(format(_("The %s keeps stopping (%s)."), c.name.c_str(), why));
       return;
@@ -1238,6 +1247,19 @@ int main(int argc, char **argv) {
   log("starting Selviana Desktop Environment %s (DISPLAY=%s, D-Bus %s)", SDE_VERSION,
       env("DISPLAY").c_str(), env("DBUS_SESSION_BUS_ADDRESS").empty() ? "missing" : "ok");
 
+  // 0.2.0 Alpha 4: the SDE core controller (docs/CORE.md) first, so that
+  // the programs started next find it. It is restarted when it crashes; the
+  // programs fall back to sde.conf meanwhile.
+  core_link::open();
+  core_link::on_core_started([] {
+    for (auto &c : g_components)
+      if (c.pid > 0) core_link::report("component-started", c.pid, c.name, "", "");
+  });
+  if (!find_program("sde-core").empty()) {
+    g_components.push_back(make_component(_("core controller"), {"sde-core"}, false));
+    start_component(g_components.back());
+  }
+
   // Monitors, keyboard and pointer settings saved in sde-settings.
   run_and_wait({"sde-settings", "--apply"}, 5);
 
@@ -1262,7 +1284,8 @@ int main(int argc, char **argv) {
   // 0.2.0 Alpha 3.1: notices programs that stop responding or never open.
   if (cfg.get_bool("force_close", "enabled", true) && !find_program("sde-watchdog").empty())
     g_components.push_back(make_component(_("application watchdog"), {"sde-watchdog"}, false));
-  for (size_t i = 1; i < g_components.size(); ++i) start_component(g_components[i]);
+  for (auto &c : g_components)  // the window manager and the core run already
+    if (c.pid == 0 && !c.given_up) start_component(c);
 
   std::string agent = cfg.get("session", "polkit_agent", "auto");
   if (agent == "auto") agent = find_polkit_agent();
@@ -1281,13 +1304,15 @@ int main(int argc, char **argv) {
     start_component(g_components.back());
   }
   run_autostart();
+  core_link::phase("running");
   // What the programs started with: later only changes are delivered.
   remember_delivered(cfg);
   claim_session_selection();
 
   bool running = true;
   while (running) {
-    struct pollfd fds[2] = {{sfd, POLLIN, 0}, {ConnectionNumber(g_display), POLLIN, 0}};
+    struct pollfd fds[3] = {{sfd, POLLIN, 0}, {ConnectionNumber(g_display), POLLIN, 0}, {core_link::fd(), POLLIN, 0}};
+    nfds_t nfds = fds[2].fd >= 0 ? 3 : 2;
     // Sleep until a signal, an X event or the next scheduled restart; an idle
     // session manager must not wake up every second.
     int timeout = step_transition(cfg);  // a theme switch in progress
@@ -1304,12 +1329,13 @@ int main(int argc, char **argv) {
       int ms = theme_auto_seconds_left() * 1000 + 500;
       timeout = timeout < 0 ? ms : std::min(timeout, ms);
     }
-    int r = poll(fds, 2, timeout);
+    int r = poll(fds, nfds, timeout);
     if (auto_mode && theme_mode_dark("auto") != g_auto_dark) {
       g_auto_dark = theme_mode_dark("auto");
       start_transition(cfg, 0);  // a calm switch, like Apply in the Control Center
     }
     if (r < 0 && errno != EINTR) break;
+    if (nfds == 3 && fds[2].revents) core_link::dispatch();
     if (fds[1].revents) {
       while (XPending(g_display)) {
         XEvent ev;
@@ -1361,6 +1387,7 @@ int main(int argc, char **argv) {
       }
     }
   }
+  core_link::phase("ending");
   stop_all();
   unlink(pid_file().c_str());
   XCloseDisplay(g_display);

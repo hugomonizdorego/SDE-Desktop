@@ -41,7 +41,7 @@ void save_and_apply_pointers() {
 void build_input_page(Page *page) {
   Config &cfg = settings_config();
   if (g_layouts.empty()) g_layouts = keyboard_layouts();
-  page->heading(_("Keyboard & Mouse"), _("Layouts, key repeat, pointer and touchpad"));
+  page->heading(_("Keyboard & Mouse"), _("Layouts, key repeat and the mouse"));
 
   page->begin_card(_("Keyboard"));
   if (g_layouts.empty()) {
@@ -94,25 +94,11 @@ void build_input_page(Page *page) {
                  "one is connected at login."));
   page->end_card();
 
+  // 0.2.0 Alpha 4: the touchpad's settings are on the Touchpad page only
+  // (tapping, scrolling and its speed were on both).
   page->begin_card(_("Touchpad"));
-  if (!has_touchpad) page->note(_("No touchpad was found. These settings apply when one is present at login."));
-  page->switch_row(_("Tap to click"), cfg.get_bool("input", "touchpad_tap", true), [](bool on) {
-    settings_config().set("input", "touchpad_tap", on ? "true" : "false");
-    save_and_apply_pointers();
-  });
-  page->switch_row(_("Natural scrolling"), cfg.get_bool("input", "touchpad_natural_scroll", true), [](bool on) {
-    settings_config().set("input", "touchpad_natural_scroll", on ? "true" : "false");
-    save_and_apply_pointers();
-  });
-  page->switch_row(_("Disable while typing"), cfg.get_bool("input", "touchpad_disable_while_typing", true),
-                   [](bool on) {
-                     settings_config().set("input", "touchpad_disable_while_typing", on ? "true" : "false");
-                     save_and_apply_pointers();
-                   });
-  page->slider_row(_("Pointer speed"), -100, 100, cfg.get_int("input", "touchpad_speed", 0), [](double v) {
-    settings_config().set("input", "touchpad_speed", std::to_string(int(v)));
-    save_and_apply_pointers();
-  });
+  if (!has_touchpad) page->note(_("No touchpad was found. Its settings apply when one is present at login."));
+  link_row(page, _("Tapping, scrolling, clicking and the touchpad's speed"), _("Touchpad"), "touchpad");
   page->end_card();
   page->finish();
 }

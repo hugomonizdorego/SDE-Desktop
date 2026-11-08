@@ -15,6 +15,7 @@
 
 #include "build_config.h"
 #include "config.h"
+#include "core_client.h"
 #include "exif.h"
 #include "gallery.h"
 #include "link.h"
@@ -163,10 +164,12 @@ GalleryWindow::GalleryWindow(int w, int h) : BufferedWindow(w, h, _("Gallery")) 
   if (mounts_fd_ >= 0) Fl::add_fd(mounts_fd_, FL_EXCEPT, mounts_cb, this);
   Fl::add_timeout(5.0, mounts_timer_cb, this);
   Fl::add_handler(x_event_handler);
+  settings_watch_ = core::watch_settings([](const std::vector<core::Key> &) { settings_changed(); });
 }
 
 GalleryWindow::~GalleryWindow() {
   Fl::remove_handler(x_event_handler);
+  core::unwatch(settings_watch_);
   Fl::remove_timeout(watch_timer_cb, this);
   if (watch_ && watch_->fd() >= 0) Fl::remove_fd(watch_->fd());
   Fl::remove_timeout(mounts_timer_cb, this);
@@ -265,23 +268,25 @@ int GalleryWindow::x_event_handler(int) {
     instance_->handle_events();
     return 0;
   }
-  if (e.type == PropertyNotify && e.xproperty.window == RootWindow(fl_display, fl_screen) &&
-      e.xproperty.atom == x11::atom("_SDE_CONFIG_SERIAL")) {
-    auto *self = instance_;
-    std::set<std::string> old_favorites = self->favorites_;
-    auto old_folders = self->user_folders_;
-    self->reload_config();
-    self->apply_theme();
-    self->sort_ctl_->value(int(self->sort_));
-    self->zoom_ctl_->value(self->zoom_);
-    self->update_menu();
-    self->layout();
-    if (old_folders != self->user_folders_) self->start_scan();
-    else if (old_favorites != self->favorites_) self->rebuild_view(true);
-    self->grid_->relayout();
-    return 0;  // other handlers may want it too
-  }
   return 0;
+}
+
+// Settings changed: sde-core's Changed signal (0.2.0 Alpha 4), or the root
+// window's _SDE_CONFIG_SERIAL without it (core_client.h).
+void GalleryWindow::settings_changed() {
+  auto *self = instance_;
+  if (!self) return;
+  std::set<std::string> old_favorites = self->favorites_;
+  auto old_folders = self->user_folders_;
+  self->reload_config();
+  self->apply_theme();
+  self->sort_ctl_->value(int(self->sort_));
+  self->zoom_ctl_->value(self->zoom_);
+  self->update_menu();
+  self->layout();
+  if (old_folders != self->user_folders_) self->start_scan();
+  else if (old_favorites != self->favorites_) self->rebuild_view(true);
+  self->grid_->relayout();
 }
 
 // ---------------------------------------------------------------- library

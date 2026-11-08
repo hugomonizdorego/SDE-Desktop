@@ -471,7 +471,7 @@ void Panel::status_menu(int index) {
 // the panel clock's and the Action Center clock's menus.
 void Panel::clock_items(ContextMenu &m) {
   auto clock = clockface::Settings::from_config(cfg_);
-  bool h24 = cfg_.get_bool("panel", "clock_24h", true);
+  bool h24 = clock.h24;
   ContextMenu styles;
   auto set_style = [this](const char *v) {
     return [this, v] { set_setting("action_center", "clock_style", v); };
@@ -487,8 +487,11 @@ void Panel::clock_items(ContextMenu &m) {
   m.check(_("Blink the Colon"), clock.blink, [this, on = clock.blink] {
     set_setting("panel", "clock_blink", on ? "false" : "true");
   }, clock.style != clockface::Style::Analog);
-  m.check(_("24-Hour Clock"), h24,
-          [this, h24] { set_setting("panel", "clock_24h", h24 ? "false" : "true"); });
+  // [clock] format decides (Clock & Weather); [panel] clock_24h says the same
+  // for the programs that still read it (0.2.0 Alpha 4).
+  m.check(_("24-Hour Clock"), h24, [this, h24] {
+    set_settings({{"clock", "format", h24 ? "12h" : "24h"}, {"panel", "clock_24h", h24 ? "false" : "true"}});
+  });
 }
 
 void Panel::clock_menu() {

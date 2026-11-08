@@ -225,15 +225,6 @@ void CalcWindow::apply_theme() {
   redraw();
 }
 
-int CalcWindow::x_event_handler(int) {
-  if (!g_window || !fl_xevent) return 0;
-  const XEvent &e = *fl_xevent;
-  if (e.type == PropertyNotify && e.xproperty.window == RootWindow(fl_display, fl_screen) &&
-      e.xproperty.atom == sde::x11::atom("_SDE_CONFIG_SERIAL"))
-    g_window->apply_theme();
-  return 0;
-}
-
 void CalcWindow::show_about() {
   sde::AppInfo info;
   info.name = _("Calculator");

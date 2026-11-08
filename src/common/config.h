@@ -35,6 +35,9 @@ class Config {
 
   static std::string user_path();
 
+  // The Rust configuration (rust_core.h compares two of them).
+  const SdeRustConfig *rust() const { return impl_; }
+
  private:
   SdeRustConfig *impl_;
 };

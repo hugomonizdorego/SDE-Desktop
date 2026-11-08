@@ -50,6 +50,7 @@
 #include "about.h"
 #include "build_config.h"
 #include "config.h"
+#include "core_client.h"
 #include "crash.h"
 #include "i18n.h"
 #include "launches.h"
@@ -154,6 +155,12 @@ void mark(Window w, bool on) {
     XSetErrorHandler(old);
   }
   log(on ? "not responding" : "responding again", hex(w));
+  // 0.2.0 Alpha 4: sde-core keeps the session's problems (docs/CORE.md).
+  long pid = pid_of(w);
+  launches::Record r;
+  bool launched = pid > 0 && launches::load(pid, r);
+  core::report(on ? "not-responding" : "responding", pid, launched && !r.name.empty() ? r.name : x11::window_title(w),
+               launched ? r.desktop_id : std::string(), hex(w));
 }
 
 pid_t run_dialog(const std::vector<std::string> &argv) {
@@ -252,6 +259,7 @@ void check_launches() {
     pid_t dialog = run_dialog({"sde-force-close", "--launch", std::to_string(pid)});
     if (dialog > 0) g.launch_dialogs[dialog] = pid;
     log("has not opened yet:", r.name + " " + std::to_string(pid));
+    core::report("not-opened", pid, r.name, r.desktop_id, "");
   }
 }
 

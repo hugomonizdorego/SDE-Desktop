@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Raw pointers are confined to this bridge. The core uses safe Rust.
+pub mod controller;
+
 use sde_core::config::Config;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;

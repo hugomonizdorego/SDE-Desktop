@@ -1,0 +1,183 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The schema of sde.conf (0.2.0 Alpha 4, docs/CORE.md "Settings"): what the
+# SDE core controller (sde-core) accepts for a key, and the one page of the
+# Control Center that edits it (docs/CONTROL-CENTER.md).
+#
+# Every key of data/sde.conf is in the schema, also the commented
+# "#key=value" ones: true/false defaults are booleans, whole numbers are
+# integers, anything else is text. This file makes types stricter (ranges,
+# value lists) and adds keys that data/sde.conf does not list. Keys that are
+# in neither are accepted as text, and sde-core logs them.
+#
+# Columns, separated by one tab:
+#   section  key  type  values  page
+# type:   bool, int (values "min..max"), int-or-auto ("auto" or an integer
+#         in "min..max"), enum (values "a|b|c"; any case, written in lower
+#         case), color (#RGB or #RRGGBB, written as #RRGGBB), time (HH:MM),
+#         text
+# page:   the Control Center page (sde-settings --page ID) that edits the
+#         key, empty when no page does. tests/test_settings_pages.py checks
+#         that no other page edits it.
+
+appearance	style	enum	graphite|fluent|glass|sde|aero|liquid-glass	appearance
+appearance	theme	enum	light|dark|auto	appearance
+appearance	low_resource	bool		effects
+appearance	accent_name	enum	blue|teal|green|yellow|orange|red|pink|purple|graphite	appearance
+appearance	accent	color		appearance
+appearance	icon_theme	text		appearance
+appearance	font	text
+appearance	font_size	int	6..32	appearance
+appearance	scale	int-or-auto	50..400	display
+appearance	wallpaper	text		appearance
+appearance	wallpaper_mode	enum	zoom|fit|stretch|center|tile	appearance
+
+aero	enabled	bool		appearance
+aero	transparency	int	0..100	appearance
+aero	blur	bool		appearance
+aero	blur_strength	int	1..12	appearance
+aero	rounded_corners	bool		appearance
+aero	animations	bool		effects
+
+menu	width	int	0..20000	start-menu
+menu	height	int	0..20000	start-menu
+menu	size	enum	small|medium|large	start-menu
+menu	show_recently_added	bool		start-menu
+menu	show_most_used	bool		start-menu
+menu	show_recent	bool
+menu	tiles	text
+menu	tiles_version	int	0..1000
+menu	favorites	text
+
+effects	enabled	enum	auto|true|false	effects
+effects	hover	enum	none|wave|glow|slide|pop|bounce	effects
+effects	launch	enum	none|zoom|zoom-out|ripple|bounce|bubbles|confetti|fade	effects
+effects	speed	enum	slow|normal|fast	effects
+effects	size	enum	small|normal|large	effects
+effects	random	bool		effects
+
+panel	search	enum	auto|box|icon|hidden	panel
+panel	style	enum	full|floating|short	panel
+panel	width_percent	int	10..100	panel
+panel	position	enum	bottom|top	panel
+panel	height	int	16..128	panel
+panel	autohide	bool		panel
+panel	locked	bool
+panel	clock_24h	bool		clock
+panel	clock_seconds	bool		clock
+panel	clock_blink	bool		clock
+panel	show_date	bool		clock
+panel	show_desktop_button	bool		panel
+panel	show_battery	bool		power
+panel	battery_display	enum	icon|percent|label|label-percent	power
+panel	battery_time	bool		power
+panel	battery_animation	enum	auto|true|false
+panel	show_keyboard	bool		panel
+panel	show_bluetooth	bool		panel
+panel	show_power	bool		panel
+panel	show_media	bool		panel
+panel	show_network	bool		panel
+panel	show_sound	bool		panel
+panel	show_tray	bool		panel
+panel	show_notifications	bool		notifications
+panel	touchpad_indicator	enum	auto|always|never
+panel	tray_overflow	enum	auto|always|never
+panel	tray_overflow_threshold	int	0..100
+panel	hide_duplicate_tray	bool		panel
+panel	pinned	text		panel
+
+desktop	icon_size	enum	small|medium|large
+desktop	sort	enum	name|size|type|modified
+desktop	show_icons	bool		desktop
+desktop	show_computer	bool		desktop
+desktop	show_home	bool		desktop
+desktop	show_trash	bool		desktop
+
+suite	gtk_theme	enum	auto|system	suite
+
+action_center	show_clock	bool		action-center
+action_center	clock_style	enum	digital|led|analog|blink	clock
+action_center	show_greeting	bool		action-center
+action_center	multicolor	bool		action-center
+action_center	move_status	bool		action-center
+action_center	show_notifications	bool
+action_center	show_media	bool		action-center
+action_center	show_app_volume	bool		action-center
+action_center	show_microphone	bool		action-center
+action_center	show_tray	bool		action-center
+action_center	tile_columns	int	1..8	action-center
+
+clock	auto_timezone	bool		date-time
+clock	format	enum	auto|24h|12h|24|12	clock
+clock	style	enum	digital|led|analog|blink
+clock	seconds	bool
+clock	blink	bool
+
+weather	enabled	bool		clock
+weather	unit	enum	auto|celsius|fahrenheit|kelvin|c|f|k	clock
+weather	wind_unit	enum	auto|kmh|mph|ms|knots	clock
+weather	location	text		clock
+weather	cache_minutes	int	1..1440
+weather	animation	enum	auto|true|false	clock
+weather	fps	int	1..60
+
+brightness	auto_dim_seconds	int	0..86400
+
+night_light	temperature	int	1000..10000
+night_light	schedule	enum	sunset|always|custom
+night_light	from	time
+night_light	to	time
+
+notifications	do_not_disturb	bool		notifications
+notifications	timeout	int	0..3600	notifications
+
+input	keyboard_layout	text		input
+input	keyboard_layout2	text		input
+input	repeat_delay	int	50..5000	input
+input	repeat_rate	int	1..200	input
+input	mouse_speed	int	-100..100	input
+input	mouse_natural_scroll	bool		input
+input	touchpad_tap	bool		touchpad
+input	touchpad_natural_scroll	bool		touchpad
+input	touchpad_disable_while_typing	bool		touchpad
+input	touchpad_speed	int	-100..100	touchpad
+
+touchpad	enabled	bool		touchpad
+touchpad	tap_drag	bool		touchpad
+touchpad	scroll	enum	two-finger|edge|none	touchpad
+touchpad	click	enum	areas|clickfinger	touchpad
+
+force_close	mark_after	int	1..3600
+force_close	timeout	int	1..86400
+
+compositor	mode	enum	auto|off|on	effects
+compositor	backend	enum	auto|glx|xrender	effects
+compositor	effects	enum	auto|full|lite
+
+update	check_interval	int	0..8760
+update	remind_hours	int	0..8760
+
+power	idle_dim_battery	int	0..86400	power
+power	idle_blank_battery	int	0..86400	power
+power	idle_suspend_battery	int	0..86400	power
+power	idle_dim_ac	int	0..86400	power
+power	idle_blank_ac	int	0..86400	power
+power	idle_suspend_ac	int	0..86400	power
+power	dim_level	int	1..100
+power	lid_battery	enum	suspend|hibernate|lock|blank|nothing|poweroff|logind	power
+power	lid_ac	enum	suspend|hibernate|lock|blank|nothing|poweroff|logind	power
+power	power_button	enum	interactive|suspend|hibernate|lock|blank|nothing|poweroff|logind	power
+power	notify_battery	bool		power
+power	battery_low	int	1..100	power
+power	battery_critical	int	1..100	power
+power	critical_action	enum	hibernate|suspend|poweroff|nothing	power
+power	profile_battery	text		power
+power	profile_ac	text		power
+power	brightness_step	int	1..50
+power	show_osd	bool		power
+
+lock	idle_lock	int	0..86400	lock
+lock	lock_on_suspend	bool		lock
+lock	blank_after	int	0..86400	lock
+lock	show_switch_user	bool		lock
+
+applications	terminal	text		default-apps

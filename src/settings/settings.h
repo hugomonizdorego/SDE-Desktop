@@ -44,6 +44,12 @@ void refresh_if_shown(const char *page_id);
 
 // Shows page |id| ("users"), scrolled to its |anchor| (Page::anchor()).
 void open_settings_page(const std::string &id, const std::string &anchor = "");
+// 0.2.0 Alpha 4, one place for each setting (docs/CONTROL-CENTER.md): a row
+// that says which settings live on a related page (|text|) with a button
+// named after that page (|title|) that opens it, at |anchor| when given.
+// A page never offers a setting of another page itself.
+void link_row(Page *page, const std::string &text, const std::string &title, const char *page_id,
+              const char *anchor = nullptr);
 // Id of the page shown.
 const std::string &current_settings_page();
 // The native symbol of a page or overview tile (main.cpp).

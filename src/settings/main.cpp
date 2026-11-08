@@ -47,6 +47,7 @@
 #include "build_history.h"
 #include "build_info.h"
 #include "config.h"
+#include "core_client.h"
 #include "dbus.h"
 #include "effects.h"
 #include "desktop_entry.h"
@@ -102,14 +103,39 @@ void refresh_if_shown(const char *page_id) {
 Config &settings_config() { return g_cfg; }
 const Theme &settings_theme() { return g_theme; }
 
+// What sde.conf held when the Control Center last saved or read it: only
+// what the pages changed since then is written (0.2.0 Alpha 4), so changes
+// other programs made meanwhile (the panel's menus) are kept.
+Config &saved_config() {
+  static Config saved;
+  return saved;
+}
+
+// The values this window wrote whose Changed has not come back yet, by key
+// (the value programs read afterwards). sde-core writes them one after the
+// other: while a slider is dragged, Changed for an earlier value comes when
+// the window already shows a later one, and is not a change made elsewhere.
+std::map<core::Key, std::vector<std::string>> &values_in_flight() {
+  static std::map<core::Key, std::vector<std::string>> written;
+  return written;
+}
+
 void apply_change() {
   double old_scale = g_theme.scale;
-  g_cfg.save();
+  // Through sde-core (checked, merged, announced with Changed; the session
+  // tells GTK, the window manager and the compositor), or the file and the
+  // announcement of 0.2.0 Alpha 3 without it (core_client.h).
+  std::vector<core::Write> writes = core::diff(saved_config(), g_cfg);
+  if (core::available())
+    for (const auto &w : writes) {
+      auto &list = values_in_flight()[{w.section, w.key}];
+      list.push_back(g_cfg.get(w.section, w.key, "\x01"));
+      if (list.size() > 32) list.erase(list.begin());  // a write sde-core refused never comes back
+    }
+  core::write(writes);
+  saved_config() = g_cfg;
   g_theme = Theme::from_config(g_cfg);
   g_theme.apply_to_fltk();
-  // GTK settings, SDE WM and the compositor files are written at once; the
-  // session tells each program what changed (without a session, this does).
-  announce_config_change(fl_display, g_cfg);
   if (std::fabs(g_theme.scale - old_scale) > 0.01) {
     // Every size depends on the scale: start again with the new one.
     Fl::add_timeout(0.2, [](void *) {
@@ -1167,8 +1193,7 @@ class IconThemeCard : public PickCard {
 Label *g_transparency_note = nullptr;
 Label *g_theme_note = nullptr;
 Slider *g_transparency_slider = nullptr, *g_blur_slider = nullptr;
-Switch *g_translucent_switch = nullptr, *g_blur_switch = nullptr, *g_corners_switch = nullptr,
-       *g_animations_switch = nullptr;
+Switch *g_translucent_switch = nullptr, *g_blur_switch = nullptr, *g_corners_switch = nullptr;
 
 // "Panel 82 % · Menus 88 % · Window frames 94 % opaque" for the slider hint.
 std::string transparency_summary(const Theme &t) {
@@ -1216,7 +1241,7 @@ class LookMiniature : public Fl_Widget {
 void build_appearance(Page *page) {
   g_transparency_note = g_theme_note = nullptr;
   g_transparency_slider = g_blur_slider = nullptr;
-  g_translucent_switch = g_blur_switch = g_corners_switch = g_animations_switch = nullptr;
+  g_translucent_switch = g_blur_switch = g_corners_switch = nullptr;
   page->heading(_("Appearance"), _("Theme, colors, translucency, size and wallpaper"));
   page->begin_card(_("Theme"));
   // The chosen look at a glance; Preview shows it for real.
@@ -1306,37 +1331,21 @@ void build_appearance(Page *page) {
     draft_changed();
   });
   g_corners_switch->tooltip(_("Rounded window corners"));
-  g_animations_switch = page->switch_row(
-      _("Smooth animations"), look.animations,
-      [](bool on) {
-        g_draft.set_animations(on);
-        draft_changed();
-      },
-      _("Fade windows and menus in and out."));
-  g_animations_switch->tooltip(_("Smooth animations"));
   page->note(_("Theme, mode, accent color and these settings are applied together with Apply; Preview "
-               "shows them first. Size, icons and the wallpaper apply at once."));
+               "shows them first. Text size, icons and the wallpaper apply at once."));
+  if (g_cfg.get_bool("appearance", "low_resource", false))
+    page->note(_("Low resource mode (Effects) keeps every surface opaque and without blur."));
   if (g_cfg.get("compositor", "mode", "auto") == "off")
-    page->note(_("Compositing is off (Power & Updates), so glass effects are not shown."));
+    page->note(_("Compositing is off (Effects), so glass effects are not shown."));
   else if (file_exists(config_home() + "/sde/compositor.conf"))
     page->note(_("~/.config/sde/compositor.conf exists, so it is used instead of these settings."));
+  // 0.2.0 Alpha 4: one place for each setting.
+  link_row(page, _("Fading windows and menus, and other animations"), _("Effects"), "effects");
   page->end_card();
 
-  page->begin_card(_("Size and text"));
-  // 75 % to 200 % in quarters; another number shows as the nearest.
-  static const char *scale_values[] = {"auto", "75", "100", "125", "150", "175", "200"};
-  std::string sc = lower(trim(g_cfg.get("appearance", "scale", "auto")));
-  std::vector<std::string> scales = {_("Automatic"), "75 %", "100 %", "125 %", "150 %", "175 %", "200 %"};
-  int pct = g_cfg.get_int("appearance", "scale", 100);
-  int sc_i = sc == "auto" || sc.empty() ? 0 : std::max(1, std::min(6, (pct - 50 + 12) / 25));
-  page->choice_row(
-      _("Interface size"), scales, sc_i,
-      [](int v) {
-        if (v >= 0 && v < 7) g_cfg.set("appearance", "scale", scale_values[v]);
-        apply_change();
-      },
-      _("Larger sizes help on high-resolution screens, 75 % fits more on a small one. Automatic "
-        "follows the screen's DPI."));
+  page->begin_card(_("Text"));
+  // The interface size goes with the screens it is chosen for (Displays,
+  // display profiles); it was here too up to 0.2.0 Alpha 3.1.
   int pt = g_cfg.get_int("appearance", "font_size", 10);
   std::vector<std::string> sizes;
   for (int s = 8; s <= 14; ++s) sizes.push_back(format(_("%d pt"), s));
@@ -1344,6 +1353,7 @@ void build_appearance(Page *page) {
     g_cfg.set("appearance", "font_size", std::to_string(v + 8));
     apply_change();
   });
+  link_row(page, _("The interface size (75 % to 200 %)"), _("Displays"), "display", "scale");
   page->end_card();
 
   // Icons: one choice for GTK applications, Liria, the desktop, the Start
@@ -1452,7 +1462,7 @@ void set_bool(const char *section, const char *key, bool on) {
 }
 
 void build_panel(Page *page) {
-  page->heading(_("Panel"), _("Position, size, clock and pinned applications"));
+  page->heading(_("Panel"), _("Position, size, status icons and pinned applications"));
   page->begin_card(_("Panel style"));
   int preview_w = (page->width() - S(56)) / 3;
   int preview_y = page->cursor();
@@ -1506,19 +1516,13 @@ void build_panel(Page *page) {
   }
   page->end_card();
 
-  page->begin_card(_("Clock and status"));
-  page->switch_row(_("24-hour clock"), g_cfg.get_bool("panel", "clock_24h", true),
-                   [](bool on) {
-                     g_cfg.set("clock", "format", on ? "24h" : "12h");
-                     set_bool("panel", "clock_24h", on);
-                   });
-  page->switch_row(_("Show the date"), g_cfg.get_bool("panel", "show_date", true),
-                   [](bool on) { set_bool("panel", "show_date", on); });
+  // 0.2.0 Alpha 4: one place for each setting. The clock and the date are
+  // in Clock & Weather, the battery in Power, the notifications button in
+  // Notifications; this card links to them.
+  page->anchor("status");
+  page->begin_card(_("Status icons"));
   page->switch_row(_("Show Desktop button"), g_cfg.get_bool("panel", "show_desktop_button", false),
                    [](bool on) { set_bool("panel", "show_desktop_button", on); });
-  page->switch_row(
-      _("Show battery status"), g_cfg.get_bool("panel", "show_battery", true),
-      [](bool on) { set_bool("panel", "show_battery", on); }, _("On laptops and tablets."));
   for (const auto &item : std::vector<std::pair<std::string, std::string>>{
            {"show_keyboard", _("Keyboard indicator")},
            {"show_bluetooth", _("Bluetooth indicator")},
@@ -1526,14 +1530,16 @@ void build_panel(Page *page) {
            {"show_media", _("Media player button")},
            {"show_network", _("Network indicator")},
            {"show_sound", _("Sound indicator")},
-           {"show_tray", _("System tray button")},
-           {"show_notifications", _("Notifications button")}})
+           {"show_tray", _("System tray button")}})
     page->switch_row(item.second, g_cfg.get_bool("panel", item.first, true),
                      [key = item.first](bool on) { set_bool("panel", key.c_str(), on); });
   page->switch_row(
       _("Hide duplicate tray icons"), g_cfg.get_bool("panel", "hide_duplicate_tray", true),
       [](bool on) { set_bool("panel", "hide_duplicate_tray", on); },
       _("nm-applet, Blueman and power applets keep running; SDE's indicators show their state."));
+  link_row(page, _("The clock, 12 or 24 hours and the date"), _("Clock & Weather"), "clock");
+  link_row(page, _("The battery and its percentage"), _("Power"), "power", "battery");
+  link_row(page, _("The notifications button"), _("Notifications"), "notifications");
   page->end_card();
 
   page->begin_card(_("Pinned applications"));
@@ -1595,37 +1601,12 @@ void build_action_center(Page *page) {
   page->begin_card(_("Clock card"));
   page->switch_row(_("Show the clock"), g_cfg.get_bool("action_center", "show_clock", true),
                    [](bool on) { set_bool("action_center", "show_clock", on); });
-  {
-    // alpha52: one [clock] style for the panel and the Action Center; more
-    // on the Clock & Weather page.
-    // 0.2 Alpha 2: seconds and the blinking colon are options of their own.
-    clockface::Settings clock = clockface::Settings::from_config(g_cfg);
-    page->choice_row(_("Clock style"), {_("Digital"), _("LED"), _("Analog")},
-                     clock.style == clockface::Style::Led      ? 1
-                     : clock.style == clockface::Style::Analog ? 2
-                                                               : 0,
-                     [](int v) {
-                       static const char *values[] = {"digital", "led", "analog"};
-                       g_cfg.set("action_center", "clock_style", values[v < 0 || v > 2 ? 0 : v]);
-                       g_cfg.unset("clock", "style");
-                       apply_change();
-                     });
-    page->switch_row(_("Show seconds"), clock.seconds, [](bool on) {
-      g_cfg.unset("clock", "seconds");
-      set_bool("panel", "clock_seconds", on);
-    });
-    page->switch_row(_("Blink the colon"), clock.blink, [](bool on) {
-      g_cfg.unset("clock", "blink");
-      set_bool("panel", "clock_blink", on);
-    }, _("Digital and LED clocks."));
-  }
   page->switch_row(_("Show a greeting"), g_cfg.get_bool("action_center", "show_greeting", true),
                    [](bool on) { set_bool("action_center", "show_greeting", on); });
-  page->switch_row(_("24-hour clock"), g_cfg.get_bool("panel", "clock_24h", true),
-                   [](bool on) {
-                     g_cfg.set("clock", "format", on ? "24h" : "12h");
-                     set_bool("panel", "clock_24h", on);
-                   });
+  // 0.2.0 Alpha 4: the clock's style, seconds, blinking colon and 12 or 24
+  // hours are one setting for the panel and the Action Center, in Clock &
+  // Weather (they were here too).
+  link_row(page, _("Clock style, seconds and 12 or 24 hours"), _("Clock & Weather"), "clock");
   page->end_card();
   page->begin_card(_("Quick controls"));
   page->switch_row(
@@ -1649,6 +1630,7 @@ void build_action_center(Page *page) {
            {"show_tray", _("System tray card")}})
     page->switch_row(item.second, g_cfg.get_bool("action_center", item.first, true),
                      [key = item.first](bool on) { set_bool("action_center", key.c_str(), on); });
+  link_row(page, _("Do Not Disturb and how long notifications show"), _("Notifications"), "notifications");
   page->note(
       _("Bluetooth, Wi-Fi, LAN, sound and media have dedicated pages. The Action Center stays at "
         "the panel corner above the clock."));
@@ -1665,15 +1647,37 @@ void build_action_center(Page *page) {
   page->finish();
 }
 
-// Effects page: Start menu animations and the compositor. The effect set,
-// the capability rule and the compositor modes/report follow
-// Eduka-Desktop's Effects and Appearance pages, in SDE's own layout.
+// Effects page: animations, the Start menu's effects and the compositor.
+// The effect set, the capability rule and the compositor modes/report
+// follow Eduka-Desktop's Effects and Appearance pages, in SDE's own layout.
 void build_effects(Page *page) {
-  page->heading(_("Effects and Animations"), _("Menu animations, compositing, blur and shadows"));
+  page->heading(_("Effects and Animations"), _("Animations, the Start menu's effects and compositing"));
   double gib = 0;
   int threads = 0;
   bool capable = effects_capable(&gib, &threads);
   page->begin_card(_("Animations"));
+  // 0.2.0 Alpha 4: every animation is on this page (the fades were also in
+  // Appearance). Applied at once; the chosen look in Appearance follows.
+  page->switch_row(
+      _("Fade windows and menus"), g_cfg.get_bool("aero", "animations", true),
+      [](bool on) {
+        g_cfg.set("aero", "animations", on ? "true" : "false");
+        aero_changed();
+      },
+      _("Windows and menus fade in and out. Needs the compositor."));
+  // Low resource mode turns translucency and blur off by itself (Theme): it
+  // no longer switches Appearance's blur off for good (up to 0.2.0 Alpha 3
+  // blur stayed off after the mode was turned off again).
+  page->switch_row(
+      _("Low resource mode"), g_cfg.get_bool("appearance", "low_resource", false),
+      [](bool on) {
+        g_cfg.set("appearance", "low_resource", on ? "true" : "false");
+        aero_changed();
+      },
+      _("For older computers: turns effects, transparency and blur off."));
+  page->end_card();
+
+  page->begin_card(_("Start menu effects"));
   page->note(capable ? format(_("This computer can use effects (%.1f GiB memory, %d CPU threads)."), gib,
                               threads)
                      : format(_("Effects need 4 GB of memory and 4 CPU threads. This computer has "
@@ -1730,14 +1734,6 @@ void build_effects(Page *page) {
   page->switch_row(_("Random effects"), g_cfg.get_bool("effects", "random", false),
                    [](bool on) { set_bool("effects", "random", on); },
                    _("A different opening effect each time."));
-  page->switch_row(
-      _("Low resource mode"), g_cfg.get_bool("appearance", "low_resource", false),
-      [](bool on) {
-        g_cfg.set("appearance", "low_resource", on ? "true" : "false");
-        if (on) g_cfg.set("aero", "blur", "false");
-        aero_changed();
-      },
-      _("For older computers: turns effects and blur off."));
   page->end_card();
 
   page->begin_card(_("Compositor"));
@@ -1778,7 +1774,9 @@ void build_effects(Page *page) {
     return row;
   });
   page->end_card();
-  page->note(_("Glass transparency, blur strength and rounded corners are in Appearance."));
+  page->begin_card();
+  link_row(page, _("Transparency, blur and rounded corners"), _("Appearance"), "appearance");
+  page->end_card();
   page->finish();
 }
 
@@ -1842,6 +1840,14 @@ void build_notifications(Page *page) {
     b->callback([](Fl_Widget *, void *) { send_test_notification(); });
     return b;
   });
+  page->end_card();
+  // 0.2.0 Alpha 4: every notification option is on this page (the panel's
+  // button was on the Panel page).
+  page->begin_card(_("Where notifications show"));
+  page->switch_row(_("Notifications button on the panel"), g_cfg.get_bool("panel", "show_notifications", true),
+                   [](bool on) { set_bool("panel", "show_notifications", on); },
+                   _("The bell next to the clock; it shows how many are waiting."))
+      ->tooltip(_("Notifications button on the panel"));
   page->end_card();
   page->finish();
 }
@@ -2269,46 +2275,6 @@ void build_bluetooth(Page *page) {
   page->finish();
 }
 
-struct PowerState : Loader {
-  std::vector<std::string> profiles;
-  std::string current;
-};
-PowerState g_power;
-
-void load_power_profiles() {
-  if (g_power.loading || find_program("powerprofilesctl").empty()) return;
-  g_power.loading = true;
-  run_async(with_timeout({"powerprofilesctl", "list"}), [](const std::string &out, int status) {
-    g_power.profiles.clear();
-    g_power.current.clear();
-    std::istringstream in(out);
-    std::string line;
-    while (std::getline(in, line)) {
-      // "* balanced:" marks the active profile.
-      std::string t = trim(line);
-      if (t.empty() || t.back() != ':' ||
-          (t.find(' ') != std::string::npos && !starts_with(t, "* ")))
-        continue;
-      bool active = starts_with(t, "* ");
-      std::string name = trim(t.substr(active ? 2 : 0, t.size() - (active ? 3 : 1)));
-      if (name.empty()) continue;
-      g_power.profiles.push_back(name);
-      if (active) g_power.current = name;
-    }
-    if (status != 0) g_power.profiles.clear();
-    g_power.loaded = true;
-    g_power.loading = false;
-    refresh_if("system");
-  });
-}
-
-std::string profile_label(const std::string &p) {
-  if (p == "power-saver") return _("Power saver");
-  if (p == "balanced") return _("Balanced");
-  if (p == "performance") return _("Performance");
-  return p;
-}
-
 // Date and time: the time zone (with the panel clock's "Sync time zone")
 // and network time. The panel's "Date and time settings" link opens this
 // page.
@@ -2317,10 +2283,7 @@ void build_date_time(Page *page) {
   static bool listening = false;
   if (!listening) {
     listening = true;
-    tzsync::Sync::get().set_listener([] {
-      refresh_if_shown("system");
-      refresh_if_shown("date-time");
-    });
+    tzsync::Sync::get().set_listener([] { refresh_if_shown("date-time"); });
   }
   auto &tz = tzsync::Sync::get();
   page->begin_card(_("Date and time"));
@@ -2352,12 +2315,8 @@ void build_date_time_page(Page *page) {
   else
     build_date_time(page);
   page->begin_card(_("Clock"));
-  page->row(_("Clock style, 12 or 24 hours and the weather"), S(170), S(34),
-            [](int x, int y, int w, int h) {
-              auto *b = new FlatButton(x, y, w, h, _("Clock & Weather"));
-              b->callback([](Fl_Widget *, void *) { open_page("clock"); });
-              return b;
-            });
+  link_row(page, _("Clock style, 12 or 24 hours, the date on the panel and the weather"), _("Clock & Weather"),
+           "clock");
   page->end_card();
   page->finish();
 }
@@ -2402,39 +2361,31 @@ void build_start_menu_page(Page *page) {
             },
             _("The account button of the Start menu shows them; click it to pick another picture."));
   page->end_card();
+  // 0.2.0 Alpha 4: related settings on other pages.
+  page->begin_card(_("More for the Start menu"));
+  link_row(page, _("How its tiles move and open applications"), _("Effects"), "effects");
+  link_row(page, _("The search next to the Start button"), _("Panel"), "panel");
+  page->end_card();
   page->note(_("To pin an application, right-click it in the Start menu. Drag tiles to arrange "
                "them in groups."));
   page->finish();
 }
 
+// Control Center > Power & Updates: the system tools of SDE. Its own copies
+// of the time zone and the power mode (also on Date & Time and Power) went
+// in 0.2.0 Alpha 4: each setting lives on one page, and this one links there.
 void build_suite_system(Page *page) {
   page->heading(_("Power & Updates"), _("System tools included with SDE"));
-  build_date_time(page);
+  page->begin_card(_("Settings"));
+  link_row(page, _("Power mode, battery, sleep and the lid"), _("Power"), "power");
+  link_row(page, _("When the screen locks"), _("Lock Screen"), "lock");
+  link_row(page, _("Time zone and network time"), _("Date & Time"), "date-time");
+  link_row(page, _("Compositing, animations and the Start menu's effects"), _("Effects"), "effects");
+  page->end_card();
   const std::vector<std::pair<std::string, std::vector<std::string>>> tools = {
-      {_("Power"), {"sde-settings", "--page", "power"}},
-      {_("Lock Screen"), {"sde-settings", "--page", "lock"}},
       {_("System Monitor"), {"sde-system-monitor"}},
       {_("Software Updater"), {"sde-update"}},
   };
-  if (!g_refreshing || !g_power.loaded) load_power_profiles();
-  if (g_power.loaded && !g_power.profiles.empty()) {
-    page->begin_card(_("Power mode"));
-    std::vector<std::string> labels;
-    int cur = 0;
-    for (size_t i = 0; i < g_power.profiles.size(); ++i) {
-      labels.push_back(profile_label(g_power.profiles[i]));
-      if (g_power.profiles[i] == g_power.current) cur = int(i);
-    }
-    page->choice_row(
-        _("Power mode"), labels, cur,
-        [](int v) {
-          if (v < 0 || v >= int(g_power.profiles.size())) return;
-          run_async(with_timeout({"powerprofilesctl", "set", g_power.profiles[size_t(v)]}),
-                    [](const std::string &, int) { load_power_profiles(); });
-        },
-        _("Power saver makes the battery last longer; Performance is faster but uses more power."));
-    page->end_card();
-  }
   page->begin_card(_("System"));
   for (auto &tool : tools) {
     page->row(tool.first, S(112), S(34), [&tool](int x, int y, int w, int h) {
@@ -2446,12 +2397,6 @@ void build_suite_system(Page *page) {
       _("SDE Power handles battery, lid and idle policies. SDE Screen Lock starts with the "
         "session. "
         "No background updater is started."));
-  page->begin_card(_("Windows and effects"));
-  page->note(_("SDE WM manages windows. Compositing, animations and glass are on the Effects page."));
-  page->row(_("Effects and Animations"), S(112), S(34), [](int x, int y, int w, int h) {
-    return action_button(x, y, w, h, _("Open"), {"sde-settings", "--page", "effects"});
-  });
-  page->end_card();
   page->row(_("Applications and credits"), S(112), S(34), [](int x, int y, int w, int h) {
     return action_button(x, y, w, h, _("Applications"), {"sde-settings", "--page", "suite"});
   });
@@ -2822,7 +2767,6 @@ void draft_changed(bool rebuild) {
   if (g_translucent_switch) g_translucent_switch->value(look.translucent);
   if (g_blur_switch) g_blur_switch->value(look.blur);
   if (g_corners_switch) g_corners_switch->value(look.rounded_corners);
-  if (g_animations_switch) g_animations_switch->value(look.animations);
   if (g_page) g_page->redraw();
   if (g_sidebar_frame) g_sidebar_frame->redraw();
   update_pending_bar();
@@ -2856,6 +2800,7 @@ void follow_config_change(void *) {
   Config disk;
   disk.load();
   AppearanceLook::from_config(disk).write(g_cfg);
+  AppearanceLook::from_config(disk).write(saved_config());
   g_draft.rebase(g_cfg);
   Theme t = Theme::from_config(g_cfg);
   if (look_signature(t) == look_signature(g_theme)) {
@@ -2890,15 +2835,55 @@ void apply_draft() {
   // announcement comes (follow_config_change()), so the Control Center
   // stays as it is until the session's picture of the screen is up.
   g_draft.pending().write(g_cfg);
-  g_cfg.save();
+  std::vector<core::Write> writes = core::diff(saved_config(), g_cfg);
+  saved_config() = g_cfg;
   // Through the session (one calm step for every program, the Control
-  // Center included when the session announces it), or at once.
-  if (apply_appearance(fl_display, g_cfg)) {
+  // Center included when the session announces it), or at once. sde-core
+  // asks the session and announces the look once it shows it.
+  bool session = session_coordinates(fl_display);
+  core::write(writes, core::Mode::APPEARANCE);
+  if (session) {
     g_switching = true;
     Fl::add_timeout(3.0, follow_config_change);  // a session that does not answer
     return;
   }
   follow_config_change(nullptr);
+}
+
+// Settings changed (sde-core's Changed signal with the keys, or a change
+// announced on the root window without it): the look follows when the
+// session shows it (follow_config_change()); a key another program changed
+// (the panel's menus) is taken over, and the page shows it.
+void follow_settings(const std::vector<core::Key> &keys) {
+  if (core::touches_look(keys)) {
+    Fl::remove_timeout(follow_config_change);
+    Fl::add_timeout(0, follow_config_change);
+  }
+  Config disk;
+  disk.load();
+  bool outside = false;
+  for (const auto &k : keys) {
+    if (k.first == "appearance" || k.first == "aero") continue;  // the look: above
+    std::string now = disk.get(k.first, k.second, "\x01");
+    // A value this window wrote (perhaps an earlier one of a slider).
+    auto sent = values_in_flight().find(k);
+    if (sent != values_in_flight().end()) {
+      auto &list = sent->second;
+      auto mine = std::find(list.begin(), list.end(), now);
+      if (mine != list.end()) {
+        list.erase(list.begin(), mine + 1);
+        if (list.empty()) values_in_flight().erase(sent);
+        continue;
+      }
+    }
+    if (now == g_cfg.get(k.first, k.second, "\x01")) continue;  // this window wrote it
+    for (Config *c : {&g_cfg, &saved_config()}) {
+      if (now == "\x01") c->unset(k.first, k.second);
+      else c->set(k.first, k.second, now);
+    }
+    outside = true;
+  }
+  if (outside) refresh_page();
 }
 
 void apply_draft_later(void *) { apply_draft(); }
@@ -2915,16 +2900,6 @@ void preview_event(const std::string &what, const AppearanceLook &look) {
   } else {
     update_pending_bar();
   }
-}
-
-int follow_x_events(int) {
-  if (fl_xevent && fl_xevent->type == PropertyNotify &&
-      fl_xevent->xproperty.window == RootWindow(fl_display, fl_screen) &&
-      fl_xevent->xproperty.atom == x11::atom("_SDE_CONFIG_SERIAL")) {
-    Fl::remove_timeout(follow_config_change);
-    Fl::add_timeout(0, follow_config_change);
-  }
-  return 0;
 }
 
 // Scrolls the sidebar (as little as needed) so that row |index| is shown,
@@ -3133,6 +3108,26 @@ void open_settings_page(const std::string &id, const std::string &anchor) {
   open_page(id.c_str(), anchor.empty() ? nullptr : anchor.c_str());
 }
 
+void link_row(Page *page, const std::string &text, const std::string &title, const char *page_id,
+              const char *anchor) {
+  struct Target {
+    std::string id, anchor;
+  };
+  auto *target = keep(new Target{page_id, anchor ? anchor : ""});
+  text_font(g_theme.font_size);
+  int bw = std::max(S(150), text_width(title) + S(36));
+  page->row(text, bw, S(34), [target, title](int x, int y, int w, int h) {
+    auto *b = new FlatButton(x, y, w, h, title);
+    b->callback([](Fl_Widget *, void *d) {
+      auto *t = static_cast<Target *>(d);
+      open_settings_page(t->id, t->anchor);
+    }, target);
+    // The QA dump (and the UI tests) name it by where it leads.
+    b->copy_tooltip(format(_("Open %s"), title.c_str()).c_str());
+    return b;
+  });
+}
+
 const std::string &current_settings_page() { return g_restart_page; }
 
 void draw_settings_glyph(Painter &p, const std::string &id, double x, double y, double size,
@@ -3189,6 +3184,9 @@ const PageAlias kPageAliases[] = {
     {"open-with", "default-apps", nullptr}, {"browser", "default-apps", nullptr},
     {"mail", "default-apps", nullptr},    {"email", "default-apps", nullptr},
     {"terminal", "default-apps", nullptr},
+    // 0.2.0 Alpha 4: the cards that settings moved to.
+    {"status-icons", "panel", "status"},  {"scale", "display", "scale"},
+    {"interface-size", "display", "scale"},
 };
 
 // Page id for |name| (an id or an alias, any case), or "".
@@ -3280,6 +3278,7 @@ int main(int argc, char **argv) {
   bool migrated = migrate_theme_config(g_cfg);
   if (clockface::migrate_config(g_cfg)) migrated = true;
   if (migrated) g_cfg.save();
+  saved_config() = g_cfg;
   g_draft.load(g_cfg);
   if (apply) {
     sync_gtk_settings(g_cfg);
@@ -3288,6 +3287,19 @@ int main(int argc, char **argv) {
     apply_all(g_cfg);
     return 0;
   }
+  // 0.2.0 Alpha 4: one Control Center per session (through sde-core).
+  // Another start shows its page in the running one, which comes to the
+  // front, and ends; "sde-settings" alone only brings it to the front.
+  if (!core::single_instance("sde-settings", {requested.empty() ? "" : page, anchor, choose_avatar ? "avatar" : ""},
+                             [](const std::vector<std::string> &a) {
+                               if (!a.empty() && !a[0].empty()) open_settings_page(a[0], a.size() > 1 ? a[1] : "");
+                               if (a.size() > 2 && a[2] == "avatar") choose_avatar_picture();
+                               if (g_window && g_window->shown()) {
+                                 g_window->show();
+                                 x11::activate_window(fl_xid(g_window));
+                               }
+                             }))
+    return 0;
   fl_open_display();
   g_theme = Theme::from_config(g_cfg);
   g_theme.apply_to_fltk();
@@ -3333,15 +3345,10 @@ int main(int argc, char **argv) {
   // their changes made elsewhere (the Start menu, the lock screen).
   watch_account();
   win->show();
-  // Theme changes made elsewhere (and Apply, once the session announces
-  // it) reach the Control Center through _SDE_CONFIG_SERIAL.
-  {
-    Window root = RootWindow(fl_display, fl_screen);
-    XWindowAttributes attr;
-    XGetWindowAttributes(fl_display, root, &attr);
-    XSelectInput(fl_display, root, attr.your_event_mask | PropertyChangeMask);
-    Fl::add_handler(follow_x_events);
-  }
+  // Theme changes made elsewhere (and Apply, once the session shows it) and
+  // the keys other programs changed: sde-core's Changed signal, or
+  // _SDE_CONFIG_SERIAL on the root window without it (0.2.0 Alpha 4).
+  core::watch_settings(follow_settings);
   if (choose_avatar) Fl::add_timeout(0.3, [](void *) { choose_avatar_picture(); });
   int status = Fl::run();
   ThemePreview::get().close();

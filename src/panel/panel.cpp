@@ -25,6 +25,7 @@
 #include "badges.h"
 #include "clockface.h"
 #include "controls.h"
+#include "core_client.h"
 #include "glyphs.h"
 #include "tray_icons.h"
 #include "i18n.h"
@@ -247,6 +248,8 @@ void Panel::setup() {
   // The Start menu's and the search's applications: parsed once on idle and
   // kept up to date with inotify (app_catalog.h).
   app_catalog::start();
+  // 0.2.0 Alpha 4: settings changes from sde-core (or the root window).
+  core::watch_settings([this](const std::vector<core::Key> &) { settings_changed(); });
 
   input_display_ = XOpenDisplay(nullptr);
   if (input_display_) {
@@ -457,9 +460,11 @@ void Panel::search_changed() {
   if (search_w_ > 0) damage_rect(search_x_, 0, search_w_, h());
 }
 void Panel::toggle_dark_mode() {
-  cfg_.set("appearance", "theme", theme_.dark ? "light" : "dark");
-  // One calm switch through the session, like Apply in the Control Center.
-  if (cfg_.save()) apply_appearance(fl_display, cfg_);
+  const char *mode = theme_.dark ? "light" : "dark";
+  cfg_.set("appearance", "theme", mode);
+  // One calm switch through the session, like Apply in the Control Center
+  // (sde-core asks the session for it; without sde-core, as before).
+  core::write({{"appearance", "theme", mode, false}}, core::Mode::APPEARANCE);
 }
 
 // ---------------------------------------------------------------- pinning
@@ -474,8 +479,7 @@ void Panel::save_pins() {
   std::string list;
   for (auto &p : pinned_) list += (list.empty() ? "" : ";") + p.entry.id;
   cfg_.set("panel", "pinned", list);
-  cfg_.save();
-  x11::notify_config_changed();
+  core::set("panel", "pinned", list);
 }
 
 void Panel::pin(const std::string &id) {
@@ -497,29 +501,29 @@ void Panel::unpin(const std::string &id) {
   redraw();
 }
 
+// 0.2.0 Alpha 4: written through sde-core (checked against the schema,
+// merged with what other programs wrote, announced with Changed), or into
+// the file directly without it (core_client.h).
 void Panel::set_setting(const std::string &section, const std::string &key,
                         const std::string &value) {
-  if (value.empty()) cfg_.unset(section, key);
-  else cfg_.set(section, key, value);
-  cfg_.save();
-  x11::notify_config_changed();
+  set_settings({{section, key, value}});
 }
 
 void Panel::set_settings(const std::vector<Setting> &settings) {
+  std::vector<core::Write> writes;
   for (const auto &s : settings) {
     if (s.value.empty())
       cfg_.unset(s.section, s.key);
     else
       cfg_.set(s.section, s.key, s.value);
+    writes.push_back({s.section, s.key, s.value, s.value.empty()});
   }
-  cfg_.save();
-  x11::notify_config_changed();
+  core::write(writes);
 }
 
 void Panel::set_do_not_disturb(bool on) {
   cfg_.set("notifications", "do_not_disturb", on ? "true" : "false");
-  cfg_.save();
-  x11::notify_config_changed();
+  core::set("notifications", "do_not_disturb", on ? "true" : "false");
   quick_->status_changed();
   flyout_->status_changed();
 }
@@ -2206,6 +2210,34 @@ void Panel::refresh_tasks() {
   redraw();
 }
 
+// Settings changed: sde-core's Changed signal, or a change announced on the
+// root window while it does not run (core::watch_settings() in setup()).
+void Panel::settings_changed() {
+  bool was_autohide = autohide_;
+  load_config();
+  if (!autohide_) revealed_ = true;
+  place_on_screen();
+  for (auto &t : tasks_) update_task(t);
+  clock_tick(this);  // [clock] style, seconds and format apply at once
+  relayout();
+  redraw();
+  quick_->status_changed();
+  flyout_->status_changed();
+  status_flyout_->status_changed();
+  notify_flyout_->status_changed();
+  // An open Start menu or search follows the theme and accent at once.
+  menu_->config_changed();
+  search_->config_changed();
+  led_update();
+  // The battery's display, animation and [power] levels.
+  battery_update();
+  SystemStatus::get().refresh_battery();
+  TouchpadMonitor::get().want_motion(touchpad_motion_wanted());
+  Alarms::get().reload();
+  alarms_->changed();
+  if (autohide_ && !was_autohide) Fl::add_timeout(1.0, hide_timeout, this);
+}
+
 bool Panel::handle_x(const XEvent &e) {
   bool tray_changed = false;
   if (tray_ && tray_->handle(e, tray_changed)) {
@@ -2260,31 +2292,9 @@ bool Panel::handle_x(const XEvent &e) {
     } else if (a == x11::atom(avatar::kSerialAtom)) {
       // The account picture or name changed (Control Center, Start menu).
       panel_account::reload();
-    } else if (a == x11::atom("_SDE_CONFIG_SERIAL")) {
-      bool was_autohide = autohide_;
-      load_config();
-      if (!autohide_) revealed_ = true;
-      place_on_screen();
-      for (auto &t : tasks_) update_task(t);
-      clock_tick(this);  // [clock] style, seconds and format apply at once
-      relayout();
-      redraw();
-      quick_->status_changed();
-      flyout_->status_changed();
-      status_flyout_->status_changed();
-      notify_flyout_->status_changed();
-      // An open Start menu or search follows the theme and accent at once.
-      menu_->config_changed();
-      search_->config_changed();
-      led_update();
-      // The battery's display, animation and [power] levels.
-      battery_update();
-      SystemStatus::get().refresh_battery();
-      TouchpadMonitor::get().want_motion(touchpad_motion_wanted());
-      Alarms::get().reload();
-      alarms_->changed();
-      if (autohide_ && !was_autohide) Fl::add_timeout(1.0, hide_timeout, this);
     }
+    // 0.2.0 Alpha 4: settings changes come through core::watch_settings()
+    // (sde-core's Changed signal, or _SDE_CONFIG_SERIAL without it).
     return true;
   }
   if (e.type == ConfigureNotify && e.xconfigure.window == root) {

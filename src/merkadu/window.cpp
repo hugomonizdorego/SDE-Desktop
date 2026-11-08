@@ -14,6 +14,8 @@
 
 #include "build_config.h"
 #include "buffered_window.h"
+#include "config.h"
+#include "core_client.h"
 #include "i18n.h"
 #include "icons.h"
 #include "image_cache.h"
@@ -997,6 +999,25 @@ int run_window(const View &start) {
   win->size_range(std::min(W, S(640)), std::min(H, S(440)));
   win->resizable(win);
   win->xclass("merkadu");
+  // 0.2.0 Alpha 4: a new theme, mode or accent reaches the open window
+  // (sde-core's LookChanged, or the root window's _SDE_CONFIG_SERIAL).
+  core::watch_look([] {
+    Config cfg;
+    cfg.load();
+    double scale = ui_scale();  // the sizes stay until the next start
+    Theme theme = Theme::from_config(cfg);
+    set_ui_scale(scale);
+    theme.scale = scale;
+    theme.apply_to_fltk();
+    IconLoader::set_theme(cfg.get("appearance", "icon_theme", "auto"), theme.dark);
+    if (g_sidebar_scroll) {
+      g_sidebar_scroll->color(theme.surface.fl());
+      g_sidebar_scroll->scrollbar.color(theme.surface.fl());
+      g_sidebar_scroll->scrollbar.selection_color(theme.border.fl());
+    }
+    schedule_rebuild();
+    if (g_win) g_win->redraw();
+  });
   g_view = start;
   if (g_search) g_search->value(search_text_of(start).c_str());
   st.listen(on_store_event);
