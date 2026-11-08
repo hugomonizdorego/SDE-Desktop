@@ -10,6 +10,7 @@
 // the desktop and other programs through XDND), and renaming in place (F2).
 #include <FL/Fl.H>
 #include <FL/Fl_Tooltip.H>
+#include <FL/Fl_Touch.H>
 #include <FL/fl_draw.H>
 #include <FL/platform.H>
 #include <glib.h>
@@ -838,8 +839,9 @@ int FileCanvas::handle(int e) {
       press_y = my;
       dragging = false;
       if (k < 0) {
-        // The rubber band.
-        band = true;
+        // The rubber band; a finger scrolls instead (a tap on the empty
+        // part only clears the selection, docs/TOUCH.md).
+        band = !Fl_Touch::event_is_touch();
         band_x0 = band_x1 = mx - x();
         band_y0 = band_y1 = my - y();
         band_base = (st & (FL_CTRL | FL_SHIFT)) ? t.model.selected() : std::set<std::string>();
@@ -847,7 +849,7 @@ int FileCanvas::handle(int e) {
           t.model.clear_selection();
           w->selection_changed();
         }
-        Fl::add_timeout(0.05, autoscroll_cb, this);
+        if (band) Fl::add_timeout(0.05, autoscroll_cb, this);
         return 1;
       }
       const Item &it = t.model.at(k);
@@ -935,6 +937,18 @@ int FileCanvas::handle(int e) {
         return 1;
       }
       return 0;
+    case FL_ZOOM_GESTURE: {
+      // Two fingers change the size of the icons like Ctrl+wheel: one step
+      // for every fifth of a pinch (docs/TOUCH.md). A finger's scroll goes
+      // to the Fl_Scroll around the canvas.
+      static double pinch = 1.0;
+      pinch *= Fl_Touch::zoom_factor();
+      if (pinch > 1.2 || pinch < 1 / 1.2) {
+        w->zoom(pinch > 1 ? 1 : -1);
+        pinch = 1.0;
+      }
+      return 1;
+    }
     case FL_FOCUS:
       if (t.model.focus.empty() && t.model.count() > 0) t.model.focus = t.model.at(0).path;
       redraw();

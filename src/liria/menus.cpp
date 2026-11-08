@@ -9,6 +9,7 @@
 // (sde-appimage verifies them first), Extract and Compress with Taca, Edit
 // with for pictures, Send to for removable drives, Set as wallpaper.
 #include <FL/Fl.H>
+#include <FL/platform.H>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -17,6 +18,7 @@
 #include "config.h"
 #include "file_chooser_model.h"
 #include "i18n.h"
+#include "integration.h"
 #include "location.h"
 #include "menu.h"
 #include "openwith.h"
@@ -56,7 +58,10 @@ void set_wallpaper(MainWindow *w, const std::string &path) {
     w->say(_("The wallpaper could not be saved."), true);
     return;
   }
-  x11::notify_config_changed();
+  // Like Gallery and Photo: when the look takes its colours from the
+  // wallpaper, the session switches every program to it in one calm step
+  // (0.2.0 Alpha 4, integration.h).
+  announce_wallpaper_change(fl_display, cfg);
   w->say(_("The picture is the wallpaper now."));
 }
 

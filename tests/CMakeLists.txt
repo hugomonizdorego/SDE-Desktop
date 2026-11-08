@@ -616,3 +616,25 @@ if(TARGET liria-core)
     set_tests_properties(liria-ui liria-dbus PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
   endif()
 endif()
+# 0.2.0 Alpha 4 window management (docs/WINDOWS.md, docs/SHORTCUTS.md): the
+# shortcut list and the SDE WM keybinds made from it, the workspaces, the
+# snapping and Task View's layout (no display); the shortcut sheet against
+# the list; and on Xvfb the window menu, the workspaces, the taskbar, Task
+# View and the window shortcuts, with the patched SDE WM when the components
+# are built (an unpatched window manager skips the parts that need it).
+add_executable(sde-windows-tests test_windows.cpp)
+target_link_libraries(sde-windows-tests PRIVATE sde-windows-core)
+add_test(NAME sde-windows-model COMMAND sde-windows-tests ${PROJECT_SOURCE_DIR})
+add_test(NAME sde-shortcuts-sheet COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_shortcuts.py
+  $<TARGET_FILE:sde-windows>)
+if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
+  set(SDE_WINDOWS_WM "")
+  if(SDE_BUILD_COMPONENTS)
+    set(SDE_WINDOWS_WM --wm "${CMAKE_BINARY_DIR}/session-stage${CMAKE_INSTALL_PREFIX}/bin/sde-wm")
+  endif()
+  add_test(NAME sde-window-menu-ui COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_window_menu_ui.py ${CMAKE_BINARY_DIR} ${SDE_WINDOWS_WM})
+  add_test(NAME sde-workspaces-ui COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_workspaces_ui.py ${CMAKE_BINARY_DIR} ${SDE_WINDOWS_WM})
+  set_tests_properties(sde-window-menu-ui sde-workspaces-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()

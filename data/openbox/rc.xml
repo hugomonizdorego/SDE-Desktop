@@ -6,7 +6,9 @@
   Copied to ~/.config/sde/openbox/rc.xml on first login. SDE switches the
   window theme (SDE-<Family>-<Mode>-<Accent>) and the button layout with the
   theme chosen in Settings; any other theme or layout you set by
-  hand is left alone.
+  hand is left alone. The workspaces (<desktops>) and the block of SDE's
+  keyboard shortcuts in <keyboard> are written from sde.conf at every login
+  (Control Center > Workspaces, docs/SHORTCUTS.md).
 -->
 <openbox_config xmlns="http://openbox.org/3.4/rc" xmlns:xi="http://www.w3.org/2001/XInclude">
   <!-- sde: animateIconify migrated -->
@@ -55,39 +57,93 @@
 
   <keyboard>
     <chainQuitKey>C-g</chainQuitKey>
-    <!-- Application menu (Super key) -->
-    <keybind key="Super_L" onRelease="yes"><action name="Execute"><command>sde-panel --menu</command></action></keybind>
-    <keybind key="A-F1"><action name="Execute"><command>sde-panel --menu</command></action></keybind>
-    <keybind key="W-a"><action name="Execute"><command>sde-panel --quick-settings</command></action></keybind>
-    <keybind key="W-c"><action name="Execute"><command>sde-panel --calendar</command></action></keybind>
-    <keybind key="A-F2"><action name="Execute"><command>sde-run</command></action></keybind>
-    <keybind key="C-A-t"><action name="Execute"><command>sde-run --terminal</command></action></keybind>
-    <keybind key="W-e"><action name="Execute"><command>xdg-open .</command></action></keybind>
-    <keybind key="C-A-Delete"><action name="Execute"><command>sde-logout</command></action></keybind>
-    <keybind key="A-S-F12"><action name="Execute"><command>sde-session --compositor toggle</command></action></keybind>
-    <keybind key="C-A-l"><action name="Execute"><command>sde-lock</command></action></keybind>
-    <keybind key="Print"><action name="Execute"><command>sh -c 'command -v scrot &gt;/dev/null &amp;&amp; scrot "$HOME/Pictures/Screenshot-%Y%m%d-%H%M%S.png"'</command></action></keybind>
-    <!-- Windows -->
-    <keybind key="A-F4"><action name="Close"/></keybind>
-    <keybind key="A-Tab"><action name="NextWindow"><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action></keybind>
-    <keybind key="A-S-Tab"><action name="PreviousWindow"><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action></keybind>
-    <keybind key="W-Up"><action name="Maximize"/></keybind>
-    <keybind key="W-Down"><action name="Unmaximize"/></keybind>
+    <!-- SDE shortcuts begin. SDE writes this block from its shortcut list (docs/SHORTCUTS.md);
+         change a shortcut in sde.conf [shortcuts]. Keybinds of your own go after the end mark:
+         a key bound there wins over SDE's binding for it. -->
+    <keybind key="A-F4"><action name="If"><type>desktop</type><then><action name="Execute"><command>sde-logout</command></action></then><else><action name="Close"/></else></action></keybind>
+    <keybind key="A-space"><action name="ShowMenu"><menu>client-menu</menu></action></keybind>
+    <keybind key="A-Tab"><action name="NextWindow"><allDesktops>no</allDesktops><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action></keybind>
+    <keybind key="A-S-Tab"><action name="PreviousWindow"><allDesktops>no</allDesktops><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action></keybind>
+    <keybind key="A-Escape"><action name="Lower"/><action name="FocusToBottom"/><action name="Unfocus"/></keybind>
+    <keybind key="W-Up"><action name="Execute"><command>sde-windows snap up</command></action></keybind>
+    <keybind key="W-Down"><action name="Execute"><command>sde-windows snap down</command></action></keybind>
+    <keybind key="W-Left"><action name="Execute"><command>sde-windows snap left</command></action></keybind>
+    <keybind key="W-Right"><action name="Execute"><command>sde-windows snap right</command></action></keybind>
+    <keybind key="W-S-Up"><action name="MaximizeVert"/></keybind>
+    <keybind key="W-S-Down"><action name="UnmaximizeVert"/></keybind>
+    <keybind key="W-S-Left"><action name="MoveResizeTo"><monitor>prev</monitor></action></keybind>
+    <keybind key="W-S-Right"><action name="MoveResizeTo"><monitor>next</monitor></action></keybind>
     <keybind key="W-h"><action name="Iconify"/></keybind>
+    <keybind key="W-m"><action name="Execute"><command>sde-windows minimize-all</command></action></keybind>
+    <keybind key="W-S-m"><action name="Execute"><command>sde-windows restore-minimized</command></action></keybind>
+    <keybind key="W-Home"><action name="Execute"><command>sde-windows minimize-others</command></action></keybind>
     <keybind key="W-d"><action name="ToggleShowDesktop"/></keybind>
-    <keybind key="W-Left">
-      <action name="UnmaximizeFull"/>
-      <action name="MoveResizeTo"><x>0</x><y>0</y><width>50%</width><height>100%</height></action>
-    </keybind>
-    <keybind key="W-Right">
-      <action name="UnmaximizeFull"/>
-      <action name="MoveResizeTo"><x>-0</x><y>0</y><width>50%</width><height>100%</height></action>
-    </keybind>
-    <!-- Workspaces -->
+    <keybind key="W-Tab"><action name="Execute"><command>sde-taskview</command></action></keybind>
+    <keybind key="C-A-Tab"><action name="Execute"><command>sde-taskview</command></action></keybind>
+    <keybind key="C-W-d"><action name="Execute"><command>sde-windows workspace new</command></action></keybind>
+    <keybind key="C-W-F4"><action name="Execute"><command>sde-windows workspace close</command></action></keybind>
+    <keybind key="C-W-Left"><action name="GoToDesktop"><to>left</to><wrap>no</wrap></action></keybind>
     <keybind key="C-A-Left"><action name="GoToDesktop"><to>left</to><wrap>no</wrap></action></keybind>
+    <keybind key="C-W-Right"><action name="GoToDesktop"><to>right</to><wrap>no</wrap></action></keybind>
     <keybind key="C-A-Right"><action name="GoToDesktop"><to>right</to><wrap>no</wrap></action></keybind>
-    <keybind key="W-1"><action name="GoToDesktop"><to>1</to></action></keybind>
-    <keybind key="W-2"><action name="GoToDesktop"><to>2</to></action></keybind>
+    <keybind key="C-W-S-Left"><action name="SendToDesktop"><to>left</to><wrap>no</wrap><follow>yes</follow></action></keybind>
+    <keybind key="C-A-S-Left"><action name="SendToDesktop"><to>left</to><wrap>no</wrap><follow>yes</follow></action></keybind>
+    <keybind key="C-W-S-Right"><action name="SendToDesktop"><to>right</to><wrap>no</wrap><follow>yes</follow></action></keybind>
+    <keybind key="C-A-S-Right"><action name="SendToDesktop"><to>right</to><wrap>no</wrap><follow>yes</follow></action></keybind>
+    <keybind key="Super_L" onRelease="yes"><action name="Execute"><command>sde-panel --menu</command></action></keybind>
+    <keybind key="Super_R" onRelease="yes"><action name="Execute"><command>sde-panel --menu</command></action></keybind>
+    <keybind key="C-Escape"><action name="Execute"><command>sde-panel --menu</command></action></keybind>
+    <keybind key="A-F1"><action name="Execute"><command>sde-panel --menu</command></action></keybind>
+    <keybind key="W-s"><action name="Execute"><command>sde-panel --search</command></action></keybind>
+    <keybind key="W-q"><action name="Execute"><command>sde-panel --search</command></action></keybind>
+    <keybind key="W-r"><action name="Execute"><command>sde-run</command></action></keybind>
+    <keybind key="A-F2"><action name="Execute"><command>sde-run</command></action></keybind>
+    <keybind key="W-e"><action name="Execute"><command>sh -c 'command -v liria &gt;/dev/null &amp;&amp; exec liria --no-desktop "$HOME" || exec xdg-open "$HOME"'</command></action></keybind>
+    <keybind key="W-i"><action name="Execute"><command>sde-settings</command></action></keybind>
+    <keybind key="W-a"><action name="Execute"><command>sde-panel --action-center</command></action></keybind>
+    <keybind key="W-n"><action name="Execute"><command>sde-panel --notifications</command></action></keybind>
+    <keybind key="W-c"><action name="Execute"><command>sde-panel --calendar</command></action></keybind>
+    <keybind key="W-A-d"><action name="Execute"><command>sde-panel --calendar</command></action></keybind>
+    <keybind key="W-w"><action name="Execute"><command>sde-panel --calendar</command></action></keybind>
+    <keybind key="W-x"><action name="Execute"><command>sde-panel --quick-link-menu</command></action></keybind>
+    <keybind key="C-A-t"><action name="Execute"><command>sde-run --terminal</command></action></keybind>
+    <keybind key="C-S-Escape"><action name="Execute"><command>sde-system-monitor</command></action></keybind>
+    <keybind key="W-1"><action name="Execute"><command>sde-panel --taskbar 1</command></action></keybind>
+    <keybind key="W-2"><action name="Execute"><command>sde-panel --taskbar 2</command></action></keybind>
+    <keybind key="W-3"><action name="Execute"><command>sde-panel --taskbar 3</command></action></keybind>
+    <keybind key="W-4"><action name="Execute"><command>sde-panel --taskbar 4</command></action></keybind>
+    <keybind key="W-5"><action name="Execute"><command>sde-panel --taskbar 5</command></action></keybind>
+    <keybind key="W-6"><action name="Execute"><command>sde-panel --taskbar 6</command></action></keybind>
+    <keybind key="W-7"><action name="Execute"><command>sde-panel --taskbar 7</command></action></keybind>
+    <keybind key="W-8"><action name="Execute"><command>sde-panel --taskbar 8</command></action></keybind>
+    <keybind key="W-9"><action name="Execute"><command>sde-panel --taskbar 9</command></action></keybind>
+    <keybind key="W-S-1"><action name="Execute"><command>sde-panel --taskbar-new 1</command></action></keybind>
+    <keybind key="W-S-2"><action name="Execute"><command>sde-panel --taskbar-new 2</command></action></keybind>
+    <keybind key="W-S-3"><action name="Execute"><command>sde-panel --taskbar-new 3</command></action></keybind>
+    <keybind key="W-S-4"><action name="Execute"><command>sde-panel --taskbar-new 4</command></action></keybind>
+    <keybind key="W-S-5"><action name="Execute"><command>sde-panel --taskbar-new 5</command></action></keybind>
+    <keybind key="W-S-6"><action name="Execute"><command>sde-panel --taskbar-new 6</command></action></keybind>
+    <keybind key="W-S-7"><action name="Execute"><command>sde-panel --taskbar-new 7</command></action></keybind>
+    <keybind key="W-S-8"><action name="Execute"><command>sde-panel --taskbar-new 8</command></action></keybind>
+    <keybind key="W-S-9"><action name="Execute"><command>sde-panel --taskbar-new 9</command></action></keybind>
+    <keybind key="W-t"><action name="Execute"><command>sde-panel --focus-taskbar</command></action></keybind>
+    <keybind key="W-b"><action name="Execute"><command>sde-panel --section tray</command></action></keybind>
+    <keybind key="Print"><action name="Execute"><command>sde-screenshot --screen</command></action></keybind>
+    <keybind key="W-Print"><action name="Execute"><command>sde-screenshot --screen</command></action></keybind>
+    <keybind key="A-Print"><action name="Execute"><command>sde-screenshot --window</command></action></keybind>
+    <keybind key="W-S-s"><action name="Execute"><command>sde-screenshot --snip</command></action></keybind>
+    <keybind key="W-period"><action name="Execute"><command>sde-windows emoji</command></action></keybind>
+    <keybind key="W-semicolon"><action name="Execute"><command>sde-windows emoji</command></action></keybind>
+    <keybind key="C-A-Delete"><action name="Execute"><command>sde-logout --security</command></action></keybind>
+    <keybind key="W-l"><action name="Execute"><command>sde-lock</command></action></keybind>
+    <keybind key="C-A-l"><action name="Execute"><command>sde-lock</command></action></keybind>
+    <keybind key="W-p"><action name="Execute"><command>sde-settings --page display</command></action></keybind>
+    <keybind key="W-Pause"><action name="Execute"><command>sde-settings --page about</command></action></keybind>
+    <keybind key="W-k"><action name="Execute"><command>sde-panel --section bluetooth</command></action></keybind>
+    <keybind key="W-space"><action name="Execute"><command>sde-windows next-layout</command></action></keybind>
+    <keybind key="A-S-F12"><action name="Execute"><command>sde-session --compositor toggle</command></action></keybind>
+    <keybind key="C-W-S-b"><action name="Execute"><command>sde-session --compositor restart</command></action></keybind>
+    <!-- SDE shortcuts end -->
   </keyboard>
 
   <mouse>

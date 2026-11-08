@@ -380,3 +380,45 @@ windows, Super+Tab) and is shown only while that program is installed; the
 panel looks again when applications are installed. Its right-click menu
 opens Task View, hides the button or opens the panel settings. The QA dump
 names it `task-view`.
+
+## Workspaces and keyboard shortcuts on the taskbar (0.2.0 Alpha 4)
+
+The taskbar shows the windows of the workspace in view and those on every
+workspace; it followed no workspace before. A switch of workspace
+(`_NET_CURRENT_DESKTOP`) and a window moving to another one (its
+`_NET_WM_DESKTOP`) change the buttons at once. `[workspaces] taskbar_all=true`
+(Control Center > Workspaces) shows every window. See
+[WINDOWS.md](WINDOWS.md).
+
+A taskbar button's menu has the window's items of its title bar menu
+(src/common/window_menu.cpp): Restore, Move, Size, Minimize, Maximize,
+Always on Top, Move to Workspace (with All Workspaces and New Workspace),
+Close (Alt+F4), around the application's own (its other windows, New
+Window, Pin, Force Close, Close All Windows).
+
+The Start button's right-click menu is the **Quick Link menu** of Windows,
+also opened with **Win+X** (`sde-panel --quick-link-menu`): Apps (Merkadu's
+installed apps), Power Options, System Reports, System, Driver Manager,
+Network Connections, Disks, Terminal, System Monitor, Control Center,
+Files, Search, Run Command, Shut Down or Log Out (Lock, Log Out, Sleep,
+Restart, Shut Down), Desktop, Software Updater, Change the Start Button
+and Panel Settings.
+
+Keyboard (src/panel/taskbar_keys.cpp, [SHORTCUTS.md](SHORTCUTS.md)):
+
+* **Win+1 … Win+9** (`sde-panel --taskbar N`): place N counts the visible
+  pinned apps, then the windows. A pinned app starts, or its window comes
+  up (the next one when it has several), or goes down when it is the
+  active one; a window button acts as a click.
+* **Win+Shift+1 … 9** (`--taskbar-new N`): another window of that app.
+* **Win+T** (`--focus-taskbar`): the taskbar takes the keyboard; each Win+T,
+  Tab or arrow key goes to the next button and shows its preview, Enter
+  opens it, the Menu key or Shift+F10 its menu, Esc goes back to the window
+  that was active. Clicking elsewhere ends it.
+* **Win+N** (`--notifications`) opens the notifications, **Win+B**
+  (`--section tray`) the tray.
+
+Menus opened by a shortcut wait until the window manager lets go of the
+keyboard (it holds it until the key is released), so their keys work.
+`tools/panel-smoke.py` checks the taskbar menu's items and the Quick Link
+menu; `tests/test_workspaces_ui.py` the taskbar per workspace.

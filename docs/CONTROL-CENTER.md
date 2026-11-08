@@ -110,6 +110,20 @@ is built again for every size. `Page::max_width()` (before anything is
 added) gives a page another readable width, `Page::content_h()` and
 `Page::max_scroll()` describe what was added.
 
+## Workspaces (0.2.0 Alpha 4)
+
+**Control Center > Workspaces** (`sde-settings --page workspaces`, also
+`desktops`, `virtual-desktops` and `multitasking`; in the System category)
+sets how many workspaces SDE has (1 to 5), their names, whether
+Ctrl+Win+Left/Right go round from the last to the first, and whether the
+taskbar and Alt+Tab show the windows of every workspace. The workspaces are
+shown as small screens at the top (a click goes to one); the Keyboard card
+explains the shortcuts and opens Task View and the shortcut sheet. Changes
+reach the window manager at once and its configuration for the next login
+(src/settings/workspaces_page.cpp; [WINDOWS.md](WINDOWS.md)).
+`tests/test_workspaces_ui.py` changes the number and a name through the
+page.
+
 ## Interface size
 
 **Displays → Interface scale** offers Automatic, 75 %, 100 %, 125 %, 150 %,

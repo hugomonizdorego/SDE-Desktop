@@ -40,6 +40,11 @@ add_library(sde-common STATIC
   common/widgets.cpp
   common/wm.cpp
   common/x11.cpp
+  # 0.2.0 Alpha 4 (docs/WINDOWS.md, docs/SHORTCUTS.md): workspaces, the
+  # keyboard shortcuts and the window menu shared by the WM tools and the panel.
+  common/workspaces.cpp
+  common/shortcuts.cpp
+  common/window_menu.cpp
 )
 target_include_directories(sde-common PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/common
@@ -113,6 +118,8 @@ add_executable(sde-panel
   panel/notify_center.cpp
   # 0.2.0 Alpha 3.1: the Action Center's session buttons.
   panel/session_actions.cpp
+  # 0.2.0 Alpha 4: Win+1..9, Win+T and Win+X (docs/SHORTCUTS.md).
+  panel/taskbar_keys.cpp
   # The Start menu's account button and popup, the Action Center's user.
   panel/account.cpp
   # 0.2 Alpha 3: the default favorites (the user's browser, mail...) and the
@@ -155,6 +162,7 @@ add_executable(sde-settings
   settings/default_apps_page.cpp
   settings/start_button_page.cpp
   settings/about_page.cpp
+  settings/workspaces_page.cpp
   # The overview hub and Users & Avatar (the Control Center).
   settings/hub.cpp
   settings/users.cpp
@@ -192,7 +200,7 @@ endif()
 add_executable(sde-run run/main.cpp)
 target_link_libraries(sde-run PRIVATE sde-common)
 
-add_executable(sde-logout logout/main.cpp)
+add_executable(sde-logout logout/main.cpp logout/security.cpp)
 target_link_libraries(sde-logout PRIVATE sde-common)
 
 # Force Close (0.2.0 Alpha 3.1, docs/FORCE-CLOSE.md): sde-watchdog notices
@@ -592,3 +600,7 @@ add_subdirectory(merkadu)
 
 # Liria, the file manager (docs/LIRIA.md).
 add_subdirectory(liria)
+
+# Window menu, Task View, the window and workspace commands of the keyboard
+# shortcuts and screenshots (0.2.0 Alpha 4, docs/WINDOWS.md).
+add_subdirectory(windows)

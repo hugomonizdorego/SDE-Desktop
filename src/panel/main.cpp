@@ -75,6 +75,16 @@ int main(int argc, char **argv) {
       command = "alarms";
     } else if (!strcmp(argv[i], "--new-alarm")) {
       command = "alarms:new";
+    } else if ((!strcmp(argv[i], "--taskbar") || !strcmp(argv[i], "--taskbar-new")) && i + 1 < argc) {
+      // 0.2.0 Alpha 4 shortcuts (taskbar_keys.cpp): Win+1..9, Win+Shift+1..9.
+      command = std::string(argv[i] + 2) + ":" + std::to_string(atoi(argv[i + 1]));
+      ++i;
+    } else if (!strcmp(argv[i], "--focus-taskbar")) {
+      command = "focus-taskbar";
+    } else if (!strcmp(argv[i], "--quick-link-menu")) {
+      command = "quick-link-menu";
+    } else if (!strcmp(argv[i], "--notifications")) {
+      command = "notifications";
     } else if (!strcmp(argv[i], "--version")) {
       return sde::print_version("sde-panel", SDE_VERSION);
     } else {
@@ -91,6 +101,11 @@ int main(int argc, char **argv) {
                      "                    and agenda\n"
                      "  --alarms          open or close the clock's alarms\n"
                      "  --new-alarm       open the alarms with a new alarm\n"
+                     "  --notifications   open or close the notifications\n"
+                     "  --taskbar N       open or switch to the app at place N on the taskbar\n"
+                     "  --taskbar-new N   open another window of the app at place N\n"
+                     "  --focus-taskbar   go through the taskbar with the keyboard\n"
+                     "  --quick-link-menu open the Start button's menu (Win+X)\n"
                      "  --show-desktop    minimize every window, or bring them back\n"
                      "  --safe            start without tray icons and device status (after crashes)\n"));
       return strcmp(argv[i], "--help") ? 2 : 0;

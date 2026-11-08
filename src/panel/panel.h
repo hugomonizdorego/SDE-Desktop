@@ -254,6 +254,17 @@ class Panel : public sde::BufferedWindow {
   void search_context_menu();
   void pinned_menu(int index);
   void task_menu(int index);
+  // 0.2.0 Alpha 4 keyboard shortcuts (taskbar_keys.cpp, docs/SHORTCUTS.md):
+  // Win+1..9 and Win+Shift+1..9, Win+T and its keyboard mode, Win+X.
+  void taskbar_shortcut(int position, bool new_window);
+  void focus_taskbar();
+  void taskbar_key_focus(int index);
+  void taskbar_keys_end(bool back);
+  static int taskbar_key_handler(int event);
+  void quick_link_menu();
+  // [workspaces] taskbar_all=false: the taskbar shows the windows of the
+  // workspace in view (and those on every workspace) only.
+  bool on_this_workspace(Window w) const;
   void status_menu(int index);
   void clock_menu();
   void clock_items(sde::ContextMenu &m);

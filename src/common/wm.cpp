@@ -11,8 +11,10 @@
 #include "desktop_entry.h"
 #include "spawn.h"
 #include "config.h"
+#include "shortcuts.h"
 #include "theme.h"
 #include "util.h"
+#include "workspaces.h"
 
 namespace sde {
 
@@ -141,6 +143,14 @@ bool sync_openbox(const Config &cfg) {
   // Title bars follow the interface size; 7 points at least (75 %).
   int pt = cfg.get_int("appearance", "font_size", 10);
   changed = set_openbox_font_size(std::max(7, int(pt * t.scale + 0.5))) || changed;
+  // 0.2.0 Alpha 4: the workspaces (count and names) and SDE's keyboard
+  // shortcuts (docs/SHORTCUTS.md), both written from sde.conf.
+  std::string text, path = openbox_config_path();
+  if (read_file(path, text)) {
+    bool edited = workspaces::sync_openbox_desktops(text, workspaces::Settings::from_config(cfg));
+    edited = shortcuts::sync_openbox_keyboard(text, cfg) || edited;
+    if (edited && write_file_atomic(path, text)) changed = true;
+  }
   return changed;
 }
 

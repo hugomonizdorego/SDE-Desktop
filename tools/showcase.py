@@ -1999,6 +1999,7 @@ PAGE_CAPTIONS = {
     'about': 'version, build and the development log',
     'start-menu': 'size, the lists and the account on the rail',
     'date-time': 'time zone and network time',
+    'workspaces': 'how many workspaces (1 to 5), their names, going round, the taskbar and Alt+Tab',
 }
 # The account page has its own image (avatar-picker), Fingerprint its own
 # scene with a test reader (fingerprint).
@@ -3321,6 +3322,109 @@ def gallery_plugins(s):
     s.shot('gallery-plugins', quiet=0.8)
 
 
+# 0.2.0 Alpha 4 window management (docs/WINDOWS.md, docs/SHORTCUTS.md).
+def windows_app(s, cmd, title, w=760, h=480):
+    win = s.app(cmd, title)
+    s.size(win, w, h)
+    return win
+
+
+def title_bar_point(s, win):
+    """Below the title bar at the window's left edge, as Alt+Space."""
+    g = s.geom(win)
+    left, right, top, bottom = s.frame_extents(win)
+    return g['x'] - left, g['y']
+
+
+@scene('Windows', [('window-menu', 'The window menu (Alt+Space, a right click on a title bar or the window '
+                                   'icon): Restore, Move, Size, Minimize, Maximize, Always on Top, Move to '
+                                   'Workspace and Close, drawn by SDE'),
+                   ('window-menu-workspaces', 'Move to Workspace: the workspaces by name, All Workspaces and '
+                                              'New Workspace')],
+       needs=['sde-window-menu', 'niny'])
+def window_menu(s):
+    win = windows_app(s, ['niny'], 'Niny')
+    x, y = title_bar_point(s, win)
+    s.spawn('sde-window-menu', '--window', win, '--at', f'{x},{y}')
+    time.sleep(1.2)
+    s.park_pointer()
+    s.shot('window-menu', quiet=0.6)
+    # Move, Size, Minimize, Maximize, Always on Top, Move to Workspace.
+    s.key('Down', 'Down', 'Down', 'Down', 'Down', 'Down', 'Right')
+    time.sleep(0.5)
+    s.shot('window-menu-workspaces', quiet=0.6)
+    s.key('Escape', 'Escape')
+
+
+@scene('Windows', [('snapped-windows', 'Win+Left and Win+Right: two windows side by side; Win+Up and Win+Down '
+                                       'make quarters of them, the other arrow puts a window back')],
+       needs=['sde-windows', 'niny', 'calculator'])
+def snapped_windows(s):
+    a = windows_app(s, ['niny'], 'Niny')
+    s.activate(a)
+    s.run('sde-windows', 'snap', 'left')
+    b = s.app(['calculator'], '^Calculator$')
+    s.activate(b)
+    s.run('sde-windows', 'snap', 'right')
+    time.sleep(0.8)
+    s.park_pointer()
+    s.shot('snapped-windows', quiet=0.8)
+
+
+@scene('Windows', [('task-view', 'Task View (Win+Tab): the windows of the workspace in view and the '
+                                 'workspaces; drag a window onto a workspace to move it')],
+       needs=['sde-taskview', 'niny', 'calculator'])
+def task_view(s):
+    windows_app(s, ['niny'], 'Niny')
+    s.app(['calculator'], '^Calculator$')
+    other = s.app(['sde-settings', '--page', 'workspaces'], SETTINGS_TITLE)
+    s.xdo('set_desktop_for_window', other, '1')
+    time.sleep(0.6)
+    s.spawn('sde-taskview')
+    time.sleep(2.0)
+    s.park_pointer()
+    s.shot('task-view', quiet=0.8)
+    s.key('Escape')
+
+
+@scene('Panel', [('quick-link-menu', 'Win+X (or a right click on Start): the Quick Link menu, with SDE\'s '
+                                     'tools for the entries of Windows')], needs=['sde-panel'])
+def quick_link_menu(s):
+    s.run('sde-panel', '--quick-link-menu')
+    time.sleep(1.5)
+    s.park_pointer()
+    s.shot('quick-link-menu', quiet=0.6)
+    s.key('Escape')
+
+
+@scene('Screenshots', [('screenshot-snip', 'Win+Shift+S: drag over an area, or pick a window or the whole '
+                                           'screen; it is copied and saved in Pictures/Screenshots')],
+       needs=['sde-screenshot', 'niny'])
+def screenshot_snip(s):
+    windows_app(s, ['niny'], 'Niny')
+    s.spawn('sde-screenshot', '--snip', '--no-save', '--no-clipboard')
+    time.sleep(1.5)
+    x0, y0 = s.W * 0.3, s.H * 0.3
+    s.xdo('mousemove', str(int(x0)), str(int(y0)), 'mousedown', '1')
+    s.xdo('mousemove', str(int(s.W * 0.5)), str(int(s.H * 0.5)))
+    s.xdo('mousemove', str(int(s.W * 0.62)), str(int(s.H * 0.64)))
+    time.sleep(0.5)
+    s.shot('screenshot-snip', quiet=0.5)
+    s.key('Escape')
+    s.xdo('mouseup', '1')
+
+
+@scene('Session', [('security-options', 'Ctrl+Alt+Delete: Lock, Log Out, Change a Password and Task Manager, '
+                                        'the power options at the bottom right')], needs=['sde-logout'])
+def security_options(s):
+    env = dict(s.env, SDE_LOGOUT_DRY_RUN='1')
+    s.spawn('sde-logout', '--security', env=env)
+    time.sleep(2.0)
+    s.park_pointer()
+    s.shot('security-options', quiet=0.6)
+    s.key('Escape')
+
+
 # ================================================================== output
 
 
@@ -3552,7 +3656,7 @@ def parse_args(argv=None):
     if a.build_dir:
         b = a.build_dir.resolve()
         for d in ['src', 'src/niny', 'src/welcome', 'src/merkadu', 'cargo/release', 'rust/release', 'src/debrun',
-                  'src/appimage', 'src/liria']:
+                  'src/appimage', 'src/liria', 'src/windows']:
             if (b / d).is_dir():
                 a.bin_dirs.append(b / d)
         if (b / 'tests').is_dir():

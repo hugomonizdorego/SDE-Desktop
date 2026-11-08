@@ -1,0 +1,99 @@
+SDE WM: SDE's window menu in place of Openbox's client-menu.
+
+0.2.0 Alpha 4 (docs/WINDOWS.md in SDE). Openbox's client-menu (Send to
+desktop, Layer, Restore, Move, Resize, Iconify, Maximize, Roll up/down,
+Un/Decorate, Close) was drawn by Openbox in its own style; users found it
+unclear and out of place next to SDE's menus.
+
+* ShowMenu of "client-menu" (the window icon, a right click on the title
+  bar, Alt+Space) runs "sde-window-menu --window XID --at X,Y": SDE draws
+  the window menu in its menu style, theme and scale, with the items of
+  the taskbar button's menu (Restore, Move, Size, Minimize, Maximize,
+  Always on Top, Move to Workspace, Close). From the keyboard and the
+  window icon it opens below the title bar at the window's left edge, as
+  Openbox placed its menu (--above gives the frame's top for a menu that
+  does not fit below).
+* Openbox's menu remains the fallback when sde-window-menu cannot be
+  started. SDE_WM_WINDOW_MENU names another program; "openbox" keeps
+  Openbox's own menu.
+
+--- a/openbox/actions/showmenu.c
++++ b/openbox/actions/showmenu.c
+@@ -4,7 +4,11 @@
+ #include "openbox/geom.h"
+ #include "openbox/screen.h"
+ #include "openbox/config.h"
++#include "openbox/client.h"
++#include "openbox/frame.h"
++#include "openbox/debug.h"
+ #include <glib.h>
++#include <string.h>
+ 
+ typedef struct {
+     gchar         *name;
+@@ -79,6 +83,54 @@
+     g_slice_free(Options, o);
+ }
+ 
++/* SDE: the window menu ("client-menu": the window icon, a right click on
++   the title bar, Alt+Space) is SDE's own. "sde-window-menu --window XID
++   --at X,Y" draws it in the SDE menu style, theme and scale; from the
++   keyboard and the window icon it opens below the title bar at the
++   window's left edge (--above: the frame's top, where it goes when there
++   is no room below), as Openbox placed its client menu. SDE_WM_WINDOW_MENU
++   names another program, "openbox" keeps Openbox's menu. FALSE when the
++   program cannot be started: Openbox's menu is the fallback. */
++static gboolean sde_window_menu(ObActionsData *data)
++{
++    ObClient *c = data->client;
++    const gchar *program = g_getenv("SDE_WM_WINDOW_MENU");
++    gchar xid[32], at[64], above[32];
++    gchar *argv[9];
++    gint n = 0, x = data->x, y = data->y;
++    GError *err = NULL;
++
++    if (!c || !c->frame) return FALSE;
++    if (!program || !*program) program = "sde-window-menu";
++    if (!strcmp(program, "openbox")) return FALSE;
++
++    g_snprintf(xid, sizeof(xid), "0x%lx", (gulong)c->window);
++    argv[n++] = (gchar*)program;
++    argv[n++] = (gchar*)"--window";
++    argv[n++] = xid;
++    if (data->button == 0 || data->context == OB_FRAME_CONTEXT_ICON) {
++        x = c->frame->area.x;
++        y = c->frame->area.y + c->frame->size.top - c->frame->bwidth;
++        g_snprintf(above, sizeof(above), "%d",
++                   c->frame->area.y + c->frame->bwidth);
++        argv[n++] = (gchar*)"--above";
++        argv[n++] = above;
++    }
++    g_snprintf(at, sizeof(at), "%d,%d", x, y);
++    argv[n++] = (gchar*)"--at";
++    argv[n++] = at;
++    argv[n] = NULL;
++
++    if (!g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH,
++                       NULL, NULL, NULL, &err))
++    {
++        ob_debug("%s: %s", program, err ? err->message : "failed");
++        if (err) g_error_free(err);
++        return FALSE;
++    }
++    return TRUE;
++}
++
+ /* Always return FALSE because its not interactive */
+ static gboolean run_func(ObActionsData *data, gpointer options)
+ {
+@@ -117,7 +169,9 @@
+     }
+ 
+     /* you cannot call ShowMenu from inside a menu */
+-    if (data->uact != OB_USER_ACTION_MENU_SELECTION && o->name)
++    if (data->uact != OB_USER_ACTION_MENU_SELECTION && o->name &&
++        /* SDE: SDE's window menu, when it starts */
++        !(!strcmp(o->name, "client-menu") && sde_window_menu(data)))
+         menu_show(o->name, &position, monitor,
+                   data->button != 0, o->use_position, data->client);
+ 

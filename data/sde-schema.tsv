@@ -156,6 +156,15 @@ touchscreen	output	text		touch
 touchscreen	keyboard	enum	auto|off	touch
 touchscreen	long_press	int	200..2000	touch
 touchscreen	large_targets	enum	auto|true|false
+workspaces	count	int	1..5	workspaces
+workspaces	name1	text		workspaces
+workspaces	name2	text		workspaces
+workspaces	name3	text		workspaces
+workspaces	name4	text		workspaces
+workspaces	name5	text		workspaces
+workspaces	wrap	bool		workspaces
+workspaces	taskbar_all	bool		workspaces
+workspaces	alt_tab_all	bool		workspaces
 
 force_close	mark_after	int	1..3600
 force_close	timeout	int	1..86400

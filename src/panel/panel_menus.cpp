@@ -31,6 +31,7 @@
 #include "timezone.h"
 #include "touchpad_monitor.h"
 #include "util.h"
+#include "window_menu.h"
 #include "x11.h"
 
 using namespace sde;
@@ -74,19 +75,6 @@ void qa_menu(const std::string &id, const Fl_Menu_Item *items) {
     fclose(f);
     rename(tmp.c_str(), path.c_str());
   }
-}
-
-void send_desktop(Window win, long desktop) {
-  XEvent ev{};
-  ev.xclient.type = ClientMessage;
-  ev.xclient.window = win;
-  ev.xclient.message_type = x11::atom("_NET_WM_DESKTOP");
-  ev.xclient.format = 32;
-  ev.xclient.data.l[0] = desktop;
-  ev.xclient.data.l[1] = 2;  // a pager
-  Window root = RootWindow(fl_display, fl_screen);
-  XSendEvent(fl_display, root, False, SubstructureRedirectMask | SubstructureNotifyMask, &ev);
-  XFlush(fl_display);
 }
 
 std::vector<std::string> keyboard_layouts(const Config &cfg) {
@@ -175,14 +163,39 @@ void Panel::power_items(ContextMenu &m) {
   m.submenu(_("Power"), std::move(power), "system-shutdown");
 }
 
+// The Start button's menu, also Win+X (0.2.0 Alpha 4): the Quick Link menu
+// of Windows, in its order, with SDE's tools for its entries.
 void Panel::start_context_menu() {
   ContextMenu m;
-  m.item(_("Control Center"), run({"sde-settings"}), {"settings"});
+  m.item(_("Apps"), [] {
+    if (!spawn_detached({"merkadu", "--page", "installed"})) spawn_detached({"sde-settings", "--page", "suite"});
+  }, {"applications-other"});
+  m.item(_("Power Options"), settings("power"), {"preferences-system-power"});
+  m.item(_("System Reports"), run({"sde-system-reports"}), {"dialog-information"});
+  m.item(_("System"), settings("about"), {"computer"});
+  m.item(_("Driver Manager"), run({"sde-drivers"}), {"preferences-system"});
+  m.item(_("Network Connections"), settings("network"), {"preferences-system-network"});
+  m.item(_("Disks"), [] {
+    if (find_program("gnome-disks").empty() || !spawn_detached({"gnome-disks"}))
+      spawn_detached({"sde-panel", "--section", "drives"});
+  }, {"drive-harddisk", 0, true, true});
+  m.item(_("Terminal"), [] { open_terminal(); }, {"utilities-terminal", 0, true, true});
   m.item(_("System Monitor"), run({"sde-system-monitor"}), {"utilities-system-monitor"});
-  m.item(_("Run Command..."), run({"sde-run"}), {"system-run"});
+  m.item(_("Control Center"), run({"sde-settings"}), {"settings"});
+  m.item(_("Files"), [] {
+    if (find_program("liria").empty() || !spawn_detached({"liria", "--no-desktop", home_dir()})) open_uri("file://" + home_dir());
+  }, {"system-file-manager"});
+  m.item(_("Search"), [this] { open_search(); }, {"find"});
+  m.item(_("Run Command..."), run({"sde-run"}), {"system-run", 0, true, true});
+  ContextMenu leave;
+  leave.item(_("Lock"), run({"sde-logout", "--action", "lock"}), {"system-lock-screen"});
+  leave.item(_("Log Out..."), run({"sde-logout"}), {"system-log-out", 0, true, true});
+  leave.item(_("Sleep"), run({"sde-logout", "--action", "suspend"}), {"system-suspend"});
+  leave.item(_("Restart"), run({"sde-logout", "--action", "reboot"}), {"system-reboot"});
+  leave.item(_("Shut Down"), run({"sde-logout", "--action", "poweroff"}), {"system-shutdown"});
+  m.submenu(_("Shut Down or Log Out"), std::move(leave), "system-shutdown");
+  m.item(_("Desktop"), [] { x11::set_showing_desktop(!x11::showing_desktop()); }, {"user-desktop", 0, true, true});
   m.item(_("Software Updater"), run({"sde-update"}), {"system-software-update"});
-  m.separator();
-  power_items(m);
   m.separator();
   // 0.2.0 Alpha 4: its picture, text and style (Control Center > Panel).
   m.item(_("Change the Start Button..."), settings("start-button"), {"preferences-desktop"});
@@ -260,9 +273,6 @@ void Panel::task_menu(int index) {
   if (index < 0 || index >= int(tasks_.size())) return;
   const Task &t = tasks_[size_t(index)];
   Window win = t.win;
-  bool minimized = t.minimized;
-  bool maximized = x11::window_has_state(win, "_NET_WM_STATE_MAXIMIZED_VERT") &&
-                   x11::window_has_state(win, "_NET_WM_STATE_MAXIMIZED_HORZ");
   DesktopEntry entry;
   bool has_entry = find_entry_for(t, entry);
   bool pinned = has_entry && is_pinned(entry.id);
@@ -284,28 +294,10 @@ void Panel::task_menu(int index) {
     else
       m.item(_("Pin to Panel"), [this, id = entry.id] { pin(id); }, {"", 0, true, true});
   }
-  m.item(minimized ? _("Restore") : _("Minimize"), [win, minimized] {
-    if (minimized)
-      x11::activate_window(win);
-    else
-      x11::minimize_window(win);
-  });
-  m.item(maximized ? _("Restore Size") : _("Maximize"), [win] { x11::toggle_maximize(win); });
-  Window root = RootWindow(fl_display, fl_screen);
-  auto count = x11::get_cardinals(root, "_NET_NUMBER_OF_DESKTOPS");
-  if (!count.empty() && count[0] > 1) {
-    auto names = split(x11::get_utf8(root, "_NET_DESKTOP_NAMES"), 0, true);
-    auto current = x11::get_cardinals(win, "_NET_WM_DESKTOP");
-    ContextMenu ws;
-    for (unsigned long i = 0; i < count[0] && i < 32; ++i) {
-      std::string name = i < names.size() && !trim(names[i]).empty()
-                             ? names[i]
-                             : format(_("Workspace %d"), int(i + 1));
-      ws.radio(name, !current.empty() && current[0] == i, [win, i] { send_desktop(win, long(i)); });
-    }
-    m.submenu(_("Move to Workspace"), std::move(ws));
-  }
-  m.separator();
+  // 0.2.0 Alpha 4: the window's own items, the same as in its title bar's
+  // window menu (window_menu.h): Restore, Move, Size, Minimize, Maximize,
+  // Always on Top, Move to Workspace, Close.
+  window_menu::add_items(m, window_menu::read(win));
   // 0.2.0 Alpha 3.1: the program does not respond (docs/FORCE-CLOSE.md):
   // end it at once, with sde-force-close's checks.
   if (t.not_responding) {
@@ -314,7 +306,6 @@ void Panel::task_menu(int index) {
     m.item(_("Force Close"), [id = std::string(xid)] { spawn_detached({"sde-force-close", "--kill-window", id}); },
            {"process-stop"});
   }
-  m.item(_("Close Window"), [win] { x11::close_window(win); }, {"close"});
   if (windows.size() > 1) {
     std::vector<Window> all;
     for (const auto &w : windows) all.push_back(w.first);
