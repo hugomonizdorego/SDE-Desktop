@@ -63,6 +63,8 @@ mkdir -p "$OUT/test-tools"
 find "$WORK/sde-$VERSION" -type f \( -name sde-panel-service-fixture -o -name sde-sni-demo -o -name sde-grab-fixture -o -name sde-preview-window -o -name sde-lock-ui-fixture -o -name sde-ui-kit-demo -o -name sde-transfer-demo -o -name sde-file-chooser-demo -o -name sde-frozen-client \)     -exec cp '{}' "$OUT/test-tools/" \;
 # 0.2 Alpha 3: an application sending Unity LauncherEntry badges (panel-smoke, showcase).
 find "$WORK/sde-$VERSION" -type f -name sde-launcher-entry-fixture -exec cp '{}' "$OUT/test-tools/" \;
+# 0.2 Alpha 4: a fake fprintd with a test reader (showcase's Fingerprint scenes).
+find "$WORK/sde-$VERSION" -type f -name sde-fake-fprintd -exec cp '{}' "$OUT/test-tools/" \;
 # Publish complete corresponding sources beside the binaries, including all
 # patched upstream trees, submodules, copyright notices and build scripts.
 # The package build trees (debian/<package>, debian/tmp, debian/.debhelper)

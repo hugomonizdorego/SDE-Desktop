@@ -381,7 +381,9 @@ Recommends: lightdm-settings,
             ca-certificates,
             systemd-timesyncd | time-daemon,
             gnome-keyring,
-            libpam-gnome-keyring
+            libpam-gnome-keyring,
+            fprintd,
+            libpam-fprintd
 Suggests: wsdd
 Description: Selviana Desktop Environment - full desktop (metapackage)
  One installation entry point for the complete Selviana Desktop Environment:

@@ -10,7 +10,7 @@ Program names did not change.
 
 | Package | Architecture | What it holds |
 | --- | --- | --- |
-| `sde-core` | any | The desktop: `startsde`, `sde-session`, `sde-panel`, `sde-desktop`, `sde-settings` (`sde-control-center`), `sde-notifyd`, `sde-lock`, `sde-power`, `sde-run`, `sde-logout`, `sde-watchdog`, `sde-force-close`, `sde-update`, `sde-welcome`, `sde-drivers`, `sde-system-reports`, `sde-system-monitor`, `sde-display-settings`, `debrun` and `debrun-helper`, `sde-appimage`, `sde-autostart`, `sde-suite`, `sde-xsettingsd`, `sde-polkit-agent`, `xdg-desktop-portal-sde`, `sde-account-rename`, `sde-gl-probe`, `sde-theme-preview-gtk`, SDE WM (`sde-wm`), SDE compositor (`sde-compositor`); the SDE themes, icons, wallpapers, logo and avatars, the session file, `/etc/xdg/sde/sde.conf`, `/etc/xdg/sde-mimeapps.list`, the autostarts, the PAM service `sde-lock`, polkit actions, the D-Bus and portal files, man pages, translations and `/usr/share/doc/sde` (release notes, licenses of SDE-FLTK, Openbox, picom and the themes). Every program added later without a package of its own (for example the `sde-core` controller daemon) belongs here too. |
+| `sde-core` | any | The desktop: `startsde`, `sde-session`, `sde-panel`, `sde-desktop`, `sde-settings` (`sde-control-center`), `sde-notifyd`, `sde-lock`, `sde-power`, `sde-run`, `sde-logout`, `sde-watchdog`, `sde-force-close`, `sde-update`, `sde-welcome`, `sde-drivers`, `sde-system-reports`, `sde-system-monitor`, `sde-display-settings`, `debrun` and `debrun-helper`, `sde-appimage`, `sde-autostart`, `sde-suite`, `sde-xsettingsd`, `sde-polkit-agent`, `xdg-desktop-portal-sde`, `sde-account-rename`, `sde-gl-probe`, `sde-theme-preview-gtk`, SDE WM (`sde-wm`), SDE compositor (`sde-compositor`); the SDE themes, icons, wallpapers, logo and avatars, the session file, `/etc/xdg/sde/sde.conf`, `/etc/xdg/sde-mimeapps.list`, the autostarts, the PAM services `sde-lock` and `sde-lock-fingerprint`, the fingerprint profiles of `pam-auth-update` (`/usr/share/pam-configs/sde-fingerprint-*`) and their helper `sde-fingerprint-pam`, polkit actions, the D-Bus and portal files, man pages, translations and `/usr/share/doc/sde` (release notes, licenses of SDE-FLTK, Openbox, picom and the themes). Every program added later without a package of its own (for example the `sde-core` controller daemon) belongs here too. |
 | `liria` | any | Liria, the file manager: `liria`, its desktop entry, AppStream file, man page and icons, `/etc/sudoers.d/sde-liria`. |
 | `xanara` | any | Xanara, PDF viewer and editor: `xanara`. |
 | `niny` | any | Niny, text editor: `niny`. |
@@ -45,8 +45,9 @@ column 5).
 * `sde-core` needs a terminal: `gnome-terminal | x-terminal-emulator`.
   xterm is only suggested since 0.2.0 Alpha 4.
 * `sde-desktop` depends on `sde-core` and every application
-  (`>= ${source:Version}`), `gnome-terminal`, `lightdm` and `slick-greeter`,
-  and recommends `lightdm-settings` (Login Window).
+  (`>= ${source:Version}`), `gnome-terminal`, `slick-greeter` and `lightdm`,
+  and recommends `lightdm-settings` (Login Window), `fprintd` and
+  `libpam-fprintd` (fingerprint sign-in; they do nothing without a reader).
 * Merkadu refuses to remove `sde-core`, `sde-desktop`, `sde` and `merkadu`
   (`[Uninstall] protected=` adds more). Removing an application would also
   remove `sde-desktop`, so it is refused while the metapackage is installed.
@@ -132,6 +133,11 @@ DESTDIR=/tmp/niny cmake --install build --component niny
 * `startsde` registers the `x-session-manager` alternative in
   `sde-core.postinst` (removed in `sde-core.prerm`); `sde-account-rename.service`
   is enabled by `dh_installsystemd` in `sde-core`.
+* SDE's fingerprint profiles are registered like libpam-fprintd's:
+  `sde-core.postinst` runs `pam-auth-update --package`, `sde-core.prerm`
+  `pam-auth-update --package --remove sde-fingerprint-sign-in
+  sde-fingerprint-admin` when the package is removed (both only when
+  `pam-auth-update` is installed; see FINGERPRINT.md).
 
 ## Upgrading from 0.2.0~alpha3.1
 
