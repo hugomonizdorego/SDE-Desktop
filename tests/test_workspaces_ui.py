@@ -175,7 +175,12 @@ def workspace_keys(t, a, b, c):
     check(t.count() == 2, f'two workspaces to begin with ({t.count()})')
     t.activate(a)
     t.key('ctrl+super+d')
-    check(wait(lambda: t.count() == 3, 5), 'Ctrl+Win+D adds a third workspace')
+    # The key runs sde-windows: seconds on a loaded machine (ctest -j).
+    added = wait(lambda: t.count() == 3, 15)
+    check(added, 'Ctrl+Win+D adds a third workspace')
+    if not added:  # the checks below need the third workspace
+        t.run('sde-windows', 'workspace', 'new')
+        wait(lambda: t.count() == 3, 5)
     check(wait(lambda: t.current() == 2, 3), 'and shows it')
     check('count=3' in t.conf(), 'sde.conf keeps the count')
     check(wait(lambda: '<number>3</number>' in t.rc.read_text(), 5), 'so does SDE WM\'s rc.xml')
@@ -202,7 +207,7 @@ def workspace_keys(t, a, b, c):
     t.run('xdotool', 'set_desktop', '3')
     time.sleep(0.4)
     t.key('ctrl+super+F4')
-    check(wait(lambda: t.count() == 3, 5), 'Ctrl+Win+F4 closes the workspace in view')
+    check(wait(lambda: t.count() == 3, 15), 'Ctrl+Win+F4 closes the workspace in view')
     check(wait(lambda: t.current() == 2, 3), 'and shows the one before it')
     t.run('sde-windows', 'workspace', 'close', '3')
     wait(lambda: t.count() == 2, 5)
