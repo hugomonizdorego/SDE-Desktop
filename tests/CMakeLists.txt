@@ -266,6 +266,14 @@ target_link_libraries(sde-frozen-client PRIVATE ${X11_LIBRARIES})
 # re-embedding storms, bogus dock requests) for tests/test_tray.py.
 add_executable(sde-tray-client tray_client_fixture.cpp)
 target_link_libraries(sde-tray-client PRIVATE ${X11_LIBRARIES})
+# The panel's tray with those icons, misbehaving StatusNotifierItems
+# (sde-sni-demo) and IBus when it is installed; every check also asks that
+# the panel answers _NET_WM_PING at once and holds no grab.
+if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
+  add_test(NAME sde-panel-tray COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_tray.py $<TARGET_FILE:sde-panel> ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(sde-panel-tray PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()
 # Force Close: which processes may be ended, the watchdog's decisions and
 # the launch records (no display).
 add_executable(sde-force-close-tests test_force_close.cpp)

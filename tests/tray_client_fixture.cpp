@@ -284,7 +284,7 @@ int main(int argc, char **argv) {
     }
     double t = now();
     if (embedded && t >= next_action && redocks_left > 0) {
-      set_info(icon, redocks_left % 2 == 0);
+      set_info(icon, redocks_left % 2 == 1);  // shown again by the last request
       dock(icon);
       --redocks_left;
       next_action = t + 0.002;
