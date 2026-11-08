@@ -108,6 +108,10 @@ std::vector<NavItem> nav_items() {
         st.marks().empty() ? "" : std::to_string(st.marks().size()), true);
   add(View::History, _("History"), Symbol::History);
   add(View::Sources, _("Sources"), Symbol::Sources);
+  // Storage: what Flatpak and Snap keep, and Clean Up (0.2.0 Alpha 4).
+  const StorageInfo &si = st.storage();
+  long long freeable = si.loaded ? si.cleanable() : 0;
+  add(View::Storage, _("Storage"), Symbol::Folder, freeable > 0 ? format_size(freeable) : "");
   int active = st.active_jobs();
   if (!st.jobs().empty())
     add(View::Progress, _("In Progress"), Symbol::Progress, active ? std::to_string(active) : "", true);
@@ -637,6 +641,10 @@ void on_store_event(Event e) {
       if (packages_view() || g_view.kind == View::Explore || g_view.kind == View::Search) schedule_rebuild();
       if (g_sidebar) g_sidebar->redraw();
       break;
+    case Event::Storage:
+      if (g_view.kind == View::Storage) schedule_rebuild();
+      if (g_sidebar) g_sidebar->redraw();
+      break;
     default:
       schedule_rebuild();
       if (g_sidebar) g_sidebar->redraw();
@@ -720,6 +728,7 @@ const char *view_id(View::Kind k) {
     case View::Packages: return "packages";
     case View::Package: return "package";
     case View::Changes: return "changes";
+    case View::Storage: return "storage";
     default: return "explore";
   }
 }
@@ -729,7 +738,7 @@ bool view_from_id(const std::string &id, View::Kind *out) {
     *out = View::Explore;
     return true;
   }
-  for (int k = View::Explore; k <= View::Changes; ++k)
+  for (int k = View::Explore; k <= View::Storage; ++k)
     if (id == view_id(View::Kind(k))) {
       *out = View::Kind(k);
       return true;

@@ -82,13 +82,16 @@ class TextLine : public Fl_Widget {
  public:
   TextLine(int x, int y, int w, int h, int size_delta = 0, bool bold = false, bool dim = false);
   void text(const std::string &t);
+  const std::string &value() const { return text_; }
+  // Wraps the text onto more lines (from the top) instead of cutting it.
+  void wrap(bool on) { wrap_ = on; }
   void draw() override;
   Color bg;
 
  private:
   std::string text_;
   int size_delta_;
-  bool bold_, dim_;
+  bool bold_, dim_, wrap_ = false;
 };
 
 // Pill shaped on/off button.

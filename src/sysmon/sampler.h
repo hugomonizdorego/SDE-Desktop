@@ -30,6 +30,7 @@ struct ProcInfo {
   std::string exe_base;              // basename of argv[0]
   std::string desktop_hint;          // GIO_LAUNCHED_DESKTOP_FILE of this process
   char state = '?';
+  bool kernel = false;               // a thread of the Linux kernel (procfs.h)
   double cpu = 0;                    // % of the whole machine
   uint64_t memory = 0;               // resident bytes
   double read_rate = 0, write_rate = 0;  // bytes/s, -1 when not readable
@@ -118,6 +119,7 @@ class Sampler {
     uint64_t start_ticks = 0, cpu_ticks = 0;
     uint64_t io_read = 0, io_write = 0;
     bool io_ok = false, io_denied = false, have_io = false;
+    bool kernel = false;
     int uid = -1;
     std::string user, cmdline, exe_base, name, desktop_hint;
   };

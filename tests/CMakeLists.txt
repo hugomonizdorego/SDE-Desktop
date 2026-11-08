@@ -134,6 +134,13 @@ add_test(NAME sde-agenda-model COMMAND sde-agenda-tests)
 add_executable(sde-sysmon-tests test_sysmon.cpp)
 target_link_libraries(sde-sysmon-tests PRIVATE sde-sysmon-core)
 add_test(NAME sde-sysmon-parsers COMMAND sde-sysmon-tests)
+# 0.2.0 Alpha 4: My processes by default, the kernel's threads described in
+# their own group on request, never offered to be ended (Xvfb).
+if(SDE_XVFB AND TARGET sde-system-monitor)
+  add_test(NAME sde-sysmon-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_sysmon_ui.py
+    $<TARGET_FILE:sde-system-monitor>)
+  set_tests_properties(sde-sysmon-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+endif()
 
 add_executable(sde-settings-tests test_settings.cpp)
 target_link_libraries(sde-settings-tests PRIVATE sde-settings-model)
@@ -157,9 +164,11 @@ add_test(NAME sde-xanara COMMAND sde-xanara-tests)
 add_executable(sde-xanara-probe xanara_probe.cpp)
 target_link_libraries(sde-xanara-probe PRIVATE sde-xanara-core)
 if(SDE_XVFB AND TARGET xanara)
+  # 0.2.0 Alpha 4: the start page first (new documents, a tool, a drop
+  # through sde-xdnd-peer).
   add_test(NAME sde-xanara-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_xanara_ui.py
-    $<TARGET_FILE:xanara> $<TARGET_FILE:sde-xanara-probe>)
-  set_tests_properties(sde-xanara-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+    $<TARGET_FILE:xanara> $<TARGET_FILE:sde-xanara-probe> $<TARGET_FILE:sde-xdnd-peer>)
+  set_tests_properties(sde-xanara-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()
 
 add_executable(sde-taca-tests test_taca.cpp)

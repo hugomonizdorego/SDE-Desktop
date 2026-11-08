@@ -13,11 +13,43 @@ objects of the file.
 
 The man page `xanara(1)` lists the keys and the files Xanara keeps.
 
+## The start page
+
+Without a file Xanara opens on its start page, the **Home** tab, like the
+start page of an office suite: nothing has to be opened or uploaded first
+(0.2.0 Alpha 3.1 showed three buttons that all began with a file dialog).
+It has, from the top:
+
+- **Open…** (Ctrl+O), and three ways to a new PDF: **Blank PDF** (Ctrl+N;
+  one empty page of the locale's paper, A4 or US Letter, in the Edit mode
+  with the Text tool armed: a click writes), **From Images** (scans and
+  photos as pages) and **Merge PDFs** (several files into one). A new PDF
+  opens at once in a tab of its own, untitled (Untitled.pdf, Merged.pdf, the
+  first picture's name); Save asks where it goes, in the documents folder
+  first. Closed unchanged, a blank PDF asks nothing; the others ask to be
+  saved. New documents are not in the recent documents or the session
+  until they are saved. Page › Insert adds empty pages (or the pages of
+  other PDFs).
+- **Tools**: Split, Extract Pages, Compress, Recognize Text (OCR), Edit
+  Text, Fill & Sign, Protect, Remove Password, Redact, To Images, Watermark
+  and Compare. A tool asks for the PDF it works on, opens it in its mode
+  and starts (Compress asks for the quality, Edit Text waits for a click
+  into the text, Compare for the second PDF ...).
+- **Recent**: the documents opened before, as first page thumbnails, with
+  the page they were left on; a right click removes one.
+
+PDFs dropped anywhere on the window open; images dropped on it become a new
+PDF; other files are named in a message, not opened. Xanara starts on Home
+when it is started without a file and no tab of the last session comes back
+(`[xanara] restore_session=false`, or the last session had no tab).
+
 ## The window
 
-One window holds several documents in tabs, next to a **Home** tab with
-quick actions and the recent documents as thumbnails. A tab closes with its
-**×** (or the middle mouse button, Ctrl+W); closing the last one shows Home.
+One window holds several documents in tabs, next to the **Home** tab (the
+start page). A tab closes with its **×** (or the middle mouse button,
+Ctrl+W); closing the last one shows Home. Quitting asks about every tab with
+unsaved changes first and then keeps all the tabs for the next start
+(0.2.0 Alpha 3.1 left the tabs it asked about out of the session).
 The toolbar holds the side panel switch, the pointer (select or hand), the
 zoom, the modes and undo, redo, export and the properties panel; the
 context toolbar below it shows the tools of the active mode:
@@ -26,7 +58,7 @@ context toolbar below it shows the tools of the active mode:
 | --- | --- |
 | Annotate | highlight, underline, squiggly, strike-out, text box, note, pen, eraser, shapes, measure, stamps, signatures, show/hide annotations |
 | **Edit** | **edit text and pictures in the page**, add text, add a picture, links, watermark, background, header and footer, Bates numbers, crop |
-| Page | insert, extract, split, append, rotate, delete and move pages, page numbers |
+| Page | insert (empty pages or other PDFs), extract, split, append, rotate, delete and move pages, page numbers |
 | Form | text, check, radio, combo, list, button and signature fields |
 | Fill | text, check marks, crosses, dots, date, initials, signature |
 | Convert | pages to PNG or JPEG, text, HTML, Markdown, images to PDF, merge |
@@ -189,7 +221,17 @@ when one of them is called.
   removal, cross-reference streams, a damaged cross-reference table, and
   redaction (nothing of the text under a mark left in the file).
 - `sde-xanara-ui` (`tests/test_xanara_ui.py`, with Xvfb and xdotool):
-  in the window, a double click on a word, typing, Escape, Ctrl+S; a
-  character the document's font lacks; undo and redo; moving a picture;
-  opening the file again and closing the tab with its ×. The saved files
-  are read with poppler (`sde-xanara-probe`).
+  the start page without a file (its new documents and tools), Blank PDF
+  (one A4 page, untitled, closed unchanged without a question), Ctrl+N and
+  Ctrl+S through the file chooser, a tool that asks for its PDF, a PDF
+  dropped on the start page (`sde-xdnd-peer`); then in the window, a double
+  click on a word, typing, Escape, Ctrl+S; a character the document's font
+  lacks; undo and redo; moving a picture; opening the file again and
+  closing the tab with its ×. The saved files are read with poppler
+  (`sde-xanara-probe`). Every step waits for what Xanara reports
+  (`XANARA_QA_FILE`: the window size, the tabs, the mode, the text of the
+  box being edited, the cards of the start page) and the file chooser
+  (`SDE_PANEL_QA_DIR`), not for a fixed time: 0.2.0 Alpha 3.1's test
+  failed under a loaded parallel ctest, when a character typed through a
+  remapped key came out wrong or the clicks came before the window had its
+  size; the X server it uses must answer before the test starts.

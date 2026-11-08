@@ -174,6 +174,195 @@ void Store::start(bool catalog) {
   // The lists of the repositories, Flathub and the Snap Store are
   // refreshed in the background while the cached ones are shown.
   if (catalog && settings_.refresh_on_start) refresh(false);
+  if (catalog) sync_folder();
+}
+
+// ------------------------------------------------------------- storage
+
+long long StorageInfo::cleanable() const {
+  long long sum = 0;
+  for (auto &e : entries)
+    if (e.unused && e.size > 0) sum += e.size;
+  for (auto &d : data)
+    if (!d.installed && d.size > 0) sum += d.size;
+  return sum;
+}
+
+int StorageInfo::cleanable_count() const {
+  int n = 0;
+  for (auto &e : entries) n += e.unused ? 1 : 0;
+  for (auto &d : data) n += d.installed ? 0 : 1;
+  return n;
+}
+
+std::string Store::folder_readme() {
+  return _("Merkadu: the data of your Flatpak apps and snaps\n"
+           "\n"
+           "This folder shows in one place what the apps you installed from Flathub (Flatpak) and the Snap Store\n"
+           "keep in your home folder:\n"
+           "\n"
+           "  Flatpak   each Flatpak app's settings, files and cache (a link to ~/.var/app)\n"
+           "  Snap      each snap's settings and files (a link to ~/snap, or ~/.snap/data when snapd hides it)\n"
+           "\n"
+           "Both are links: the data stays where Flatpak and snapd look for it, so nothing breaks. Deleting the\n"
+           "folder of an app in here deletes that app's settings and files (it starts again as new); deleting\n"
+           "this whole folder deletes only the links.\n"
+           "\n"
+           "The installed apps themselves are kept for every user in /var/lib/flatpak and /var/lib/snapd.\n"
+           "Merkadu's Storage page shows how much each app takes and cleans up: the runtimes no app needs any\n"
+           "more, the old revisions snapd keeps and the data that removed apps left behind.\n");
+}
+
+void Store::sync_folder() {
+  if (!settings_.merkadu_folder) return;
+  StoragePaths p = storage_paths(settings_.folder_name);
+  std::string marker = join_path(state_home(), "merkadu/folder-made");
+  // Made once; afterwards kept up to date while it is there: who removed
+  // it does not get it back (the Storage page makes it again).
+  if (file_exists(marker) && !folder_state(p).exists) return;
+  std::string error;
+  if (!make_folder(p, "README.txt", folder_readme(), error)) {
+    fprintf(stderr, "merkadu: the Merkadu folder: %s\n", error.c_str());
+    return;
+  }
+  make_dirs(join_path(state_home(), "merkadu"));
+  write_file_atomic(marker, "made\n");
+}
+
+bool Store::make_merkadu_folder(std::string &error) {
+  StoragePaths p = storage_paths(settings_.folder_name);
+  bool ok = make_folder(p, "README.txt", folder_readme(), error);
+  if (ok) {
+    make_dirs(join_path(state_home(), "merkadu"));
+    write_file_atomic(join_path(state_home(), "merkadu/folder-made"), "made\n");
+  }
+  storage_.folder = folder_state(p);
+  emit(Event::Storage);
+  return ok;
+}
+
+bool Store::remove_merkadu_folder(std::string &error) {
+  StoragePaths p = storage_paths(settings_.folder_name);
+  bool ok = remove_folder(p, "README.txt", folder_readme(), error);
+  storage_.folder = folder_state(p);
+  emit(Event::Storage);
+  return ok;
+}
+
+void Store::load_storage() {
+  if (storage_.loading) {
+    storage_again_ = true;  // a change ended meanwhile
+    return;
+  }
+  storage_.loading = true;
+  emit(Event::Storage);
+  storage_pending_ = 1;  // this function's own part, done at its end
+  for (Source s : {Source::Flatpak, Source::Snap}) {
+    Backend *b = backend(s);
+    if (!b) continue;
+    ++storage_pending_;
+    b->storage([this, s](std::vector<StorageEntry> entries, bool complete) {
+      storage_entries_[int(s)] = std::move(entries);
+      storage_complete_[int(s)] = complete;
+      storage_part_done();
+    });
+  }
+  storage_part_done();
+}
+
+void Store::storage_part_done() {
+  if (--storage_pending_ > 0) return;
+  // The installed apps of each source: data of other apps is left over,
+  // but only where the source's list is complete.
+  std::set<std::string> flatpak_ids, snap_names;
+  for (auto &e : storage_entries_[int(Source::Flatpak)])
+    if (e.kind == "app") flatpak_ids.insert(e.id);
+  for (auto &e : storage_entries_[int(Source::Snap)])
+    if (e.kind == "app") snap_names.insert(e.id);
+  bool flatpak_known = storage_complete_[int(Source::Flatpak)];
+  bool snap_known = storage_complete_[int(Source::Snap)];
+  StoragePaths paths = storage_paths(settings_.folder_name);
+  std::string readme = folder_readme();
+  // Measuring a big cache takes a moment: on a worker thread.
+  background<std::vector<DataDir>>(
+      [paths, flatpak_ids, snap_names, flatpak_known, snap_known, readme] {
+        // The Snap link follows snapd when it hid its folder meanwhile.
+        std::string error;
+        if (folder_state(paths).exists) make_folder(paths, "README.txt", readme, error);
+        return scan_app_data(paths, flatpak_ids, flatpak_known, snap_names, snap_known, true);
+      },
+      [this, paths](std::vector<DataDir> data) {
+        storage_.entries.clear();
+        for (int s = 0; s < kSourceCount; ++s) {
+          storage_.complete[s] = storage_complete_[s];
+          storage_.entries.insert(storage_.entries.end(), storage_entries_[s].begin(), storage_entries_[s].end());
+        }
+        storage_.data = std::move(data);
+        storage_.paths = paths;
+        storage_.folder = folder_state(paths);
+        storage_.loading = false;
+        storage_.loaded = true;
+        emit(Event::Storage);
+        if (storage_again_) {
+          storage_again_ = false;
+          load_storage();
+        }
+      },
+      "the storage was measured");
+}
+
+int Store::clean_up() {
+  int jobs = 0;
+  // Unused runtimes: one change for each installation (one transaction).
+  std::map<std::string, std::vector<std::string>> runtimes;
+  for (auto &e : storage_.entries)
+    if (e.unused && e.source == Source::Flatpak && !e.target.empty()) runtimes[e.installation].push_back(e.target);
+  for (auto &kv : runtimes) {
+    Job j;
+    j.action = Action::Remove;
+    j.source = Source::Flatpak;
+    j.title = format(ngettext("%d unused runtime", "%d unused runtimes", int(kv.second.size())),
+                     int(kv.second.size()));
+    j.targets = kv.second;
+    if (enqueue(j)) ++jobs;
+  }
+  // Old revisions of snaps: snapd removes one at a time.
+  for (auto &e : storage_.entries)
+    if (e.unused && e.source == Source::Snap && e.target.find('@') != std::string::npos) {
+      Job j;
+      j.action = Action::Remove;
+      j.source = Source::Snap;
+      j.title = format(_("%s, old revision %s"), e.name.c_str(), e.target.substr(e.target.find('@') + 1).c_str());
+      j.targets = {e.target};
+      if (enqueue(j)) ++jobs;
+    }
+  // The data removed apps left: the user's own files, deleted at once.
+  std::vector<std::string> leftovers;
+  for (auto &d : storage_.data)
+    if (!d.installed) leftovers.push_back(d.path);
+  if (leftovers.empty()) {
+    if (jobs) load_storage();
+    return jobs ? jobs : -1;
+  }
+  StoragePaths paths = storage_.paths;
+  storage_.loading = true;
+  emit(Event::Storage);
+  background<std::string>(
+      [paths, leftovers] {
+        std::string errors;
+        for (auto &path : leftovers) {
+          std::string error;
+          if (!remove_app_data(paths, path, error)) errors += (errors.empty() ? "" : "\n") + error;
+        }
+        return errors;
+      },
+      [this](std::string errors) {
+        storage_.error = errors;
+        storage_.loading = false;
+        load_storage();
+      },
+      "left-over data was deleted");
+  return jobs;
 }
 
 void Store::reload_catalog() {
@@ -705,6 +894,8 @@ void Store::job_finished(int id, bool ok, bool cancelled, const std::string &err
     }
     reload_installed(s);
     if (s == Source::Flatpak && runtimes_loaded_) load_runtimes();
+    // What a change freed or took (once Storage was shown).
+    if (storage_.loaded && s != Source::Debian) load_storage();
     // The snapd package (Enable Snap Support, or installed in All
     // Software): snapd starts by itself in a moment; it is asked until it
     // answers, without restarting Merkadu.

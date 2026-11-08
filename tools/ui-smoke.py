@@ -730,8 +730,12 @@ try:
     run("xdotool", "key", "Escape")
     run("xdotool", "type", "--delay", "30", "1/0")
     run("xdotool", "key", "Return")
-    time.sleep(0.4)
-    state = dict(l.split("=", 1) for l in calc_qa.read_text().splitlines() if "=" in l)
+    # Until the calculator answered (not a fixed pause: later under load).
+    for _ in range(50):
+        state = dict(l.split("=", 1) for l in calc_qa.read_text().splitlines() if "=" in l)
+        if state.get("error"):
+            break
+        time.sleep(0.1)
     assert state["error"] == "Cannot divide by zero" and state["expression"], state  # input kept
     run("xdotool", "key", "Escape")
     run("xdotool", "type", "--delay", "30", "2+2")
@@ -922,12 +926,22 @@ try:
         config("short", compact=True)
         reload_panel()
         ac = open_popup("Action Center", "--action-center")
+
+        def conf_is(section, key, values):
+            # The panel writes sde.conf a moment after the click (later
+            # under load): wait for it, not a fixed pause (0.2.0 Alpha 4).
+            for _ in range(100):
+                c = configparser.ConfigParser()
+                c.read(home / ".config/sde/sde.conf")
+                if c.get(section, key, fallback="").lower() in values:
+                    return True
+                time.sleep(0.1)
+            return False
         click_control(ac, "Action Center", "Do Not Disturb")
-        cfg.read(home / ".config/sde/sde.conf")
-        assert cfg.getboolean("notifications", "do_not_disturb")
+        assert conf_is("notifications", "do_not_disturb", ("true", "1", "yes", "on")), \
+            (home / ".config/sde/sde.conf").read_text()
         click_control(ac, "Action Center", "Dark Mode")
-        cfg.read(home / ".config/sde/sde.conf")
-        assert cfg.get("appearance", "theme") == "dark"
+        assert conf_is("appearance", "theme", ("dark",)), (home / ".config/sde/sde.conf").read_text()
         escape_popup("Action Center")
         print("OVERVIEW NAVIGATION, LIVE PANEL STYLE, NETWORK AND DND PASS", flush=True)
     config("short", "dark", 100, True)

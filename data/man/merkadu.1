@@ -47,10 +47,19 @@ and updated apps, popular apps and the categories), \fBInstalled\fR (grouped
 by department), \fBUpdates\fR (updates of apps from Flatpak remotes and the
 Snap Store; the operating system is updated by Software Updater,
 \fBsde-update\fR(1)), \fBAll Software\fR, \fBHistory\fR (installations,
-updates and removals of every source, by day), \fBSources\fR, \fBIn
-Progress\fR (the queue of changes, with the animated SDE logo) and the
-departments with their subcategories, which come from Ubuntu Software
-Center, on which Merkadu is based.
+updates and removals of every source, by day), \fBSources\fR,
+\fBStorage\fR, \fBIn Progress\fR (the queue of changes, with the animated
+SDE logo) and the departments with their subcategories, which come from
+Ubuntu Software Center, on which Merkadu is based.
+.PP
+\fBStorage\fR shows what the apps of Flatpak and Snap keep on the
+computer: each app with its size and the size of its data, and \fBClean
+Up\fR, which removes the runtimes no app needs, the old revisions snapd
+keeps and the data removed apps left in the home folder. The folder
+\fI~/Merkadu\fR shows the data of every Flatpak app and snap in one place:
+its \fIFlatpak\fR and \fISnap\fR folders are links to \fI~/.var/app\fR and
+\fI~/snap\fR (or \fI~/.snap/data\fR), where Flatpak and snapd keep it;
+nothing is moved, and removing the folder removes only the links.
 .PP
 \fBAll Software\fR lists every package of the repositories by Debian section
 and status (installed, with an update, not installed, marked, settings
@@ -74,7 +83,8 @@ as the user and never as root.
 .TP
 .BI --page " NAME"
 open a page: \fBhome\fR, \fBinstalled\fR, \fBupdates\fR, \fBpackages\fR
-(All Software), \fBhistory\fR, \fBprogress\fR or \fBsources\fR.
+(All Software), \fBhistory\fR, \fBprogress\fR, \fBsources\fR or
+\fBstorage\fR.
 .TP
 .BI --search " TEXT"
 search for \fITEXT\fR.
@@ -159,8 +169,8 @@ line.
 .I /usr/share/merkadu/merkadu.conf
 the defaults: the highlighted, popular and recommended apps of the Home
 page, the number of new apps, the refresh at start, the order of the
-sources, Flathub, whether to hide the snap folder and more protected
-packages. Distributions override it with \fI/etc/merkadu/merkadu.conf\fR or
+sources, Flathub, whether to hide the snap folder, the Merkadu folder
+([Folders]) and more protected packages. Distributions override it with \fI/etc/merkadu/merkadu.conf\fR or
 a file in \fI$XDG_CONFIG_DIRS/merkadu/\fR.
 .TP
 .I /usr/share/merkadu/categories.menu

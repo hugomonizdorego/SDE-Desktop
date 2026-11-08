@@ -29,7 +29,7 @@ struct View {
   // filter, see packages_view_arg()), Package the page of one package,
   // Changes the summary of the marked changes.
   enum Kind { Explore, Category, Search, Details, Installed, Updates, History, Progress, Sources, Packages, Package,
-              Changes };
+              Changes, Storage };
   Kind kind = Explore;
   std::string arg;  // category id, search text, app id, package filter or package name
   bool operator==(const View &o) const { return kind == o.kind && arg == o.arg; }

@@ -337,6 +337,13 @@ void TextLine::draw() {
   fl_color(t.background.fl());  // the current theme (it can change while running)
   fl_rectf(x(), y(), w(), h());
   sde::text_font(t.font_size + size_delta_, bold_);
+  if (wrap_) {
+    fl_color((dim_ ? t.text_dim : t.text).fl());
+    fl_push_clip(x(), y(), w(), h());
+    fl_draw(text_.c_str(), x(), y(), w(), h(), FL_ALIGN_LEFT | FL_ALIGN_TOP | FL_ALIGN_WRAP | FL_ALIGN_INSIDE);
+    fl_pop_clip();
+    return;
+  }
   sde::draw_text(text_, x(), y(), w(), h(), dim_ ? t.text_dim : t.text);
 }
 

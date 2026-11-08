@@ -29,7 +29,13 @@ Niny describe its tabs, their close buttons, the + button and the menus
 
 Keys without modifiers (F10, Alt) are sent by keycode through XTEST: with
 some keymaps "xdotool key F10" adds Alt. SDE_TEST_DISPLAY=N sets the first
-display number (N to N+4)."""
+display number tried (SDE_XVFB_DISPLAYS=FIRST-LAST a range).
+
+Every step waits for what Niny reports, up to 15 s (0.2.0 Alpha 4: under a
+loaded parallel ctest the 5 s of 0.2.0 Alpha 3.1 were too short for a file
+handed over by a second Niny); each X server must be the test's own and
+answer before Niny starts (a test started at the same moment could take the
+same display number, and its server is not ours)."""
 import argparse
 import ctypes
 import ctypes.util
@@ -91,29 +97,39 @@ class Xtest:
 class Session:
     """One Niny on its own Xvfb."""
 
-    def __init__(self, number, size, scale, temp, label):
+    def __init__(self, numbers, size, scale, temp, label):
         self.label = label
         self.scale = scale
-        self.number = number
         self.home = Path(temp) / label
         (self.home / 'config/sde').mkdir(parents=True)
         (self.home / 'config/sde/sde.conf').write_text('[appearance]\nscale=%d\n' % scale)
         (self.home / 'qa').mkdir()
         (self.home / 'docs').mkdir()
         self.qa_dir = self.home / 'qa'
-        self.server = sp.Popen(['Xvfb', ':%d' % number, '-noreset', '-screen', '0', size + 'x24',
-                                '-nolisten', 'tcp'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-        self.env = dict(os.environ, DISPLAY=':%d' % number, HOME=str(self.home),
-                        XDG_CONFIG_HOME=str(self.home / 'config'), XDG_STATE_HOME=str(self.home / 'state'),
-                        XDG_RUNTIME_DIR=str(self.home), LANG='C.UTF-8', LC_ALL='C.UTF-8',
-                        SDE_PANEL_QA_DIR=str(self.qa_dir),
-                        DBUS_SESSION_BUS_ADDRESS='unix:path=/nonexistent-niny-ui-test')
-        for _ in range(100):
-            if self.xdo('getmouselocation').returncode == 0:
+        self.server = None
+        for number in numbers:
+            if os.path.exists('/tmp/.X11-unix/X%d' % number) or os.path.exists('/tmp/.X%d-lock' % number):
+                continue
+            server = sp.Popen(['Xvfb', ':%d' % number, '-noreset', '-screen', '0', size + 'x24',
+                               '-nolisten', 'tcp'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+            self.env = dict(os.environ, DISPLAY=':%d' % number, HOME=str(self.home),
+                            XDG_CONFIG_HOME=str(self.home / 'config'), XDG_STATE_HOME=str(self.home / 'state'),
+                            XDG_RUNTIME_DIR=str(self.home), LANG='C.UTF-8', LC_ALL='C.UTF-8',
+                            SDE_PANEL_QA_DIR=str(self.qa_dir),
+                            DBUS_SESSION_BUS_ADDRESS='unix:path=/nonexistent-niny-ui-test')
+            end = time.time() + 20
+            while time.time() < end and server.poll() is None:
+                if self.xdo('getmouselocation').returncode == 0:
+                    self.server, self.number = server, number
+                    break
+                time.sleep(0.05)
+            if self.server:
                 break
-            time.sleep(0.05)
-        else:
-            raise RuntimeError('Xvfb :%d did not start' % number)
+            if server.poll() is None:
+                server.terminate()
+                server.wait()
+        if not self.server:
+            raise RuntimeError('no X server for %s' % label)
         self.w, self.h = (int(v) for v in size.split('x'))
         self.keys = Xtest(':%d' % number)
         self.proc = None
@@ -135,9 +151,10 @@ class Session:
             p.write_text(text)
             paths.append(str(p))
         self.proc = sp.Popen([args.niny] + paths, env=self.env, stdout=self.log, stderr=sp.STDOUT)
-        if not self.wait(lambda: len(self.tabs()) == len(files), 15):
+        if not self.wait(lambda: len(self.tabs()) == len(files), 30):
             raise RuntimeError('%s: Niny did not show %d tabs (%s)' % (self.label, len(files), self.tabs()))
-        for _ in range(100):
+        end = time.time() + 20
+        while time.time() < end:
             out = self.xdo('search', '--onlyvisible', '--name', 'Niny$').stdout.split()
             if out:
                 self.win = out[0]
@@ -150,7 +167,7 @@ class Session:
         """Hands a file to the running Niny, as a file manager would."""
         p = self.home / 'docs' / name
         p.write_text(text)
-        sp.run([args.niny, str(p)], env=self.env, stdout=self.log, stderr=sp.STDOUT, timeout=20)
+        sp.run([args.niny, str(p)], env=self.env, stdout=self.log, stderr=sp.STDOUT, timeout=40)
         return p
 
     def px(self, v):
@@ -207,7 +224,7 @@ class Session:
     def tabs(self):
         return [n.split(':', 2)[2] for n, _ in self.read() if n.startswith('tab:')]
 
-    def wait(self, fn, timeout=5.0):
+    def wait(self, fn, timeout=15.0):
         end = time.time() + timeout
         while time.time() < end:
             r = fn()
@@ -254,7 +271,7 @@ def expect(s, what, ok):
     return ok
 
 
-def same_tabs(s, want, what, timeout=4.0):
+def same_tabs(s, want, what, timeout=15.0):
     got = s.wait(lambda: s.tabs() == want, timeout)
     if not got:
         failures.append('%s: %s: tabs %s, expected %s' % (s.label, what, s.tabs(), want))
@@ -350,7 +367,7 @@ def check_scrolled(s):
         s.open_more(n, n + '\n')
     s.focus()
     s.park()
-    want = s.wait(lambda: len(s.tabs()) == 2 + len(names) and s.tabs(), 10)
+    want = s.wait(lambda: len(s.tabs()) == 2 + len(names) and s.tabs(), 30)
     if not expect(s, 'all files opened (%s)' % s.tabs(), want):
         return
     scrolled = any(v[5] for n, v in s.read() if n.startswith('tab:'))
@@ -462,12 +479,17 @@ CASES = [
     ('200', '2560x1440', 200, None, (check_tabs,)),
 ]
 
-base = int(os.environ.get('SDE_TEST_DISPLAY', 400 + os.getpid() % 20000))
+first, last = 400, 20399
+if '-' in os.environ.get('SDE_XVFB_DISPLAYS', ''):
+    first, last = (int(v) for v in os.environ['SDE_XVFB_DISPLAYS'].split('-', 1))
+base = int(os.environ.get('SDE_TEST_DISPLAY', first + os.getpid() % (last - first + 1)))
 with tempfile.TemporaryDirectory(prefix='sde-niny-ui-') as temp:
     for n, (label, size, scale, work, checks) in enumerate(CASES):
         s = None
         try:
-            s = Session(base + n, size, scale, temp, label)
+            # Numbers from base + n on, in the range: the first free one.
+            numbers = [first + (base + n + k * 7 - first) % (last - first + 1) for k in range(40)]
+            s = Session(numbers, size, scale, temp, label)
             if work:
                 s.work_area(work)
             s.start([('a.txt', 'alpha\n'), ('b.txt', 'bravo\n'), ('c.txt', 'charlie\n')])

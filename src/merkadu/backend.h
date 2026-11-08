@@ -51,6 +51,24 @@ struct SourceStatus {
 };
 
 using AppsFn = std::function<void(std::vector<App> apps, std::string error)>;
+
+// What a source keeps on the computer (the Storage page, 0.2.0 Alpha 4):
+// its installed apps, runtimes and revisions with their sizes, and what
+// Clean Up may remove.
+struct StorageEntry {
+  Source source = Source::Flatpak;
+  std::string id;            // the Flatpak app or runtime name, the snap's name
+  std::string name;          // what is shown ("GNOME Platform 45", "Kart Rally")
+  std::string kind;          // "app", "runtime" or "revision" (an old revision of a snap)
+  std::string version;       // the branch, or the snap's version and revision
+  std::string target;        // for a Remove job: "system:runtime/org.gnome.Platform/x86_64/45", "kart-rally@40"
+  std::string installation;  // Flatpak: "system", "user" or another installation
+  long long size = -1;       // bytes
+  bool unused = false;       // Clean Up removes it: a runtime no app needs, an old revision
+};
+// |complete|: every installation was read (only then is data of an app
+// that is not in the list left over).
+using StorageFn = std::function<void(std::vector<StorageEntry> entries, bool complete)>;
 using DoneFn = std::function<void(bool ok, bool cancelled, std::string error)>;
 
 // How a refresh of a source's software lists went.
@@ -103,6 +121,9 @@ class Backend {
   virtual void owners(const std::vector<std::string> &paths, OwnersFn done) { done({}); }
   // Flatpak: adds the Flathub remote. Snap: hides ~/snap. Debian: nothing.
   virtual void setup(const std::string &what, DoneFn done) { done(false, false, "not supported"); }
+  // Flatpak and Snap: what is installed, with its size, and what Clean Up
+  // may remove (Flatpak's unused runtimes, snapd's old revisions).
+  virtual void storage(StorageFn done) { done({}, false); }
   // Flatpak: the runtimes and extensions, installed or offered by the
   // remotes (from their cached summaries; no network), for All Software.
   virtual void list_runtimes(std::function<void(std::vector<Package>)> done) { done({}); }

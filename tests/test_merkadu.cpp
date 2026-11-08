@@ -33,6 +33,7 @@
 #include "packages.h"
 #include "pkenum.h"
 #include "snapd.h"
+#include "storage.h"
 #include "util.h"
 
 using namespace sde;
@@ -1248,6 +1249,133 @@ static void highlights() {
   CHECK(parse_flathub_collection("<html>").empty() && parse_flathub_collection("{\"hits\":3}").empty());
 }
 
+// 0.2.0 Alpha 4: Storage and the Merkadu folder (storage.h), in a home
+// folder of the test's own.
+static void storage() {
+  char tmpl[] = "/tmp/merkadu-storage-XXXXXX";
+  const char *dir = mkdtemp(tmpl);
+  CHECK(dir != nullptr);
+  if (!dir) return;
+  std::string home = dir;
+  StoragePaths p;
+  p.home = home;
+  p.flatpak_data = home + "/.var/app";
+  p.snap_data = home + "/snap";
+  p.snap_hidden = home + "/.snap/data";
+  p.folder = home + "/Merkadu";
+  auto put = [](const std::string &path, size_t bytes) {
+    make_dirs(path.substr(0, path.rfind('/')));
+    write_file_atomic(path, std::string(bytes, 'x'));
+  };
+  // App data: an installed app, one that was removed, a link and a file.
+  put(p.flatpak_data + "/org.example.Postbox/config/settings.ini", 3000);
+  put(p.flatpak_data + "/org.example.OldGame/data/saves/slot1", 200000);
+  put(p.flatpak_data + "/org.example.OldGame/cache/big", 100000);
+  put(home + "/outside/precious.txt", 50000);
+  CHECK(symlink((home + "/outside").c_str(), (p.flatpak_data + "/org.example.Link").c_str()) == 0);
+  CHECK(symlink((home + "/outside/precious.txt").c_str(),
+                (p.flatpak_data + "/org.example.OldGame/data/link-out").c_str()) == 0);
+  put(p.flatpak_data + "/stray-file", 10);
+  // A read-only folder inside (a compiler's cache, for example).
+  put(p.flatpak_data + "/org.example.OldGame/cache/ro/file", 10);
+  chmod((p.flatpak_data + "/org.example.OldGame/cache/ro").c_str(), 0555);
+  // Hard links count once.
+  CHECK(link((p.flatpak_data + "/org.example.OldGame/data/saves/slot1").c_str(),
+             (p.flatpak_data + "/org.example.OldGame/data/saves/slot1-copy").c_str()) == 0);
+  put(p.snap_data + "/kart-rally/40/settings", 1000);
+  put(p.snap_data + "/old-snap/common/data", 5000);
+
+  long long old = disk_usage(p.flatpak_data + "/org.example.OldGame");
+  CHECK(old >= 300000 && old < 300000 + 200000);  // the hard link once, the link's target not at all
+  CHECK(disk_usage(home + "/missing") == -1);
+
+  std::vector<DataDir> data = scan_app_data(p, {"org.example.Postbox"}, true, {"kart-rally"}, true, true);
+  auto find = [&](const std::string &id) -> const DataDir * {
+    for (auto &d : data)
+      if (d.id == id) return &d;
+    return nullptr;
+  };
+  CHECK(data.size() == 4);
+  CHECK(find("org.example.Postbox") && find("org.example.Postbox")->installed);
+  CHECK(find("org.example.OldGame") && !find("org.example.OldGame")->installed && find("org.example.OldGame")->size == old);
+  CHECK(!find("org.example.Link") && !find("stray-file"));
+  CHECK(find("kart-rally") && find("kart-rally")->installed && find("kart-rally")->source == Source::Snap);
+  CHECK(find("old-snap") && !find("old-snap")->installed);
+  // A source whose apps are not known leaves nothing to delete.
+  for (auto &d : scan_app_data(p, {}, false, {}, false, false)) CHECK(d.installed && d.size == -1);
+
+  // Only folders of app data are deleted, never through a link.
+  std::string error;
+  CHECK(!remove_app_data(p, home + "/outside", error) && !error.empty());
+  CHECK(!remove_app_data(p, p.flatpak_data + "/org.example.Link", error));
+  CHECK(!remove_app_data(p, p.flatpak_data + "/stray-file", error));
+  CHECK(!remove_app_data(p, p.flatpak_data + "/..", error));
+  CHECK(!remove_app_data(p, p.flatpak_data, error));
+  CHECK(dir_exists(home + "/outside") && file_exists(home + "/outside/precious.txt"));
+  error.clear();
+  CHECK(remove_app_data(p, p.flatpak_data + "/org.example.OldGame", error) && error.empty());
+  CHECK(!dir_exists(p.flatpak_data + "/org.example.OldGame"));
+  CHECK(file_exists(home + "/outside/precious.txt"));  // the link inside pointed there
+  CHECK(dir_exists(p.flatpak_data + "/org.example.Postbox"));
+  CHECK(remove_app_data(p, p.snap_data + "/old-snap", error) && !dir_exists(p.snap_data + "/old-snap"));
+  CHECK(remove_app_data(p, p.snap_data + "/old-snap", error));  // gone already
+
+  // The Merkadu folder: links, nothing moved.
+  const std::string readme = "Merkadu: the data of your apps\nmore text\n";
+  FolderState f = folder_state(p);
+  CHECK(!f.exists && !f.blocked && f.snap_target == p.snap_data);
+  CHECK(make_folder(p, "README.txt", readme, error));
+  f = folder_state(p);
+  CHECK(f.exists && f.flatpak && f.snap);
+  char buf[256];
+  ssize_t n = readlink((p.folder + "/Flatpak").c_str(), buf, sizeof buf);
+  CHECK(n > 0 && std::string(buf, size_t(n)) == "../.var/app");
+  n = readlink((p.folder + "/Snap").c_str(), buf, sizeof buf);
+  CHECK(n > 0 && std::string(buf, size_t(n)) == "../snap");
+  CHECK(file_exists(p.folder + "/Flatpak/org.example.Postbox/config/settings.ini"));
+  std::string text;
+  CHECK(read_file(p.folder + "/README.txt", text) && text == readme);
+  // snapd's hidden folder: the Snap link follows it.
+  make_dirs(p.snap_hidden + "/kart-rally");
+  CHECK(!folder_state(p).snap);
+  CHECK(make_folder(p, "README.txt", readme, error) && folder_state(p).snap);
+  n = readlink((p.folder + "/Snap").c_str(), buf, sizeof buf);
+  CHECK(n > 0 && std::string(buf, size_t(n)) == "../.snap/data");
+  // The user's own things in the folder stay.
+  write_file_atomic(p.folder + "/notes.txt", "mine\n");
+  CHECK(remove_folder(p, "README.txt", readme, error));
+  CHECK(dir_exists(p.folder) && file_exists(p.folder + "/notes.txt"));
+  CHECK(!file_exists(p.folder + "/README.txt") && access((p.folder + "/Flatpak").c_str(), F_OK) != 0);
+  CHECK(dir_exists(p.flatpak_data + "/org.example.Postbox") && dir_exists(p.snap_hidden + "/kart-rally"));
+  unlink((p.folder + "/notes.txt").c_str());
+  CHECK(make_folder(p, "README.txt", readme, error));
+  CHECK(remove_folder(p, "README.txt", readme, error) && !dir_exists(p.folder));
+  // A file called Merkadu is not replaced.
+  write_file_atomic(p.folder, "a file\n");
+  CHECK(folder_state(p).blocked && !make_folder(p, "README.txt", readme, error));
+  unlink(p.folder.c_str());
+  // Without ~/.var/app (no Flatpak app ran yet) it is made, as Flatpak would.
+  std::string cmd = "rm -rf '" + home + "/.var'";
+  CHECK(system(cmd.c_str()) == 0);
+  CHECK(make_folder(p, "", "", error) && dir_exists(p.flatpak_data) && folder_state(p).flatpak);
+
+  // snapd's revisions: the active one and those it keeps to go back to.
+  std::vector<SnapRevision> revs;
+  CHECK(parse_snap_revisions(
+      "{\"type\":\"sync\",\"result\":["
+      "{\"name\":\"kart-rally\",\"title\":\"Kart Rally\",\"revision\":\"41\",\"version\":\"2.1\",\"status\":\"active\","
+      "\"installed-size\":980000000},"
+      "{\"name\":\"kart-rally\",\"title\":\"Kart Rally\",\"revision\":\"40\",\"version\":\"2.0\",\"status\":\"installed\","
+      "\"installed-size\":960000000},"
+      "{\"name\":\"core22\",\"revision\":\"1663\",\"status\":\"active\"}]}",
+      revs));
+  CHECK(revs.size() == 3 && revs[0].active && !revs[1].active && revs[1].revision == "40" &&
+        revs[1].size == 960000000 && revs[2].title == "core22" && revs[2].size == -1);
+  CHECK(!parse_snap_revisions("{\"type\":\"error\",\"result\":{}}", revs));
+  cmd = "chmod -R u+w '" + home + "' && rm -rf '" + home + "'";
+  CHECK(system(cmd.c_str()) == 0);
+}
+
 int main() {
   set_distribution_name("Debian");
   json();
@@ -1271,6 +1399,7 @@ int main() {
   job_queue();
   highlights();
   source_lists();
+  storage();
   if (failures) {
     fprintf(stderr, "%d merkadu check(s) failed\n", failures);
     return 1;

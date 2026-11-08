@@ -114,8 +114,9 @@ class TabList {
   void activate(int i);  // -1: Home
   void rename(int i, const std::string &path);  // after Save As
 
-  // The session file: one path per line, "*" marks the active tab.
-  std::string serialize() const;
+  // The session file: one path per line, "*" marks the active tab. Tabs
+  // for which |keep| says false (new documents never saved) are left out.
+  std::string serialize(const std::function<bool(int)> &keep = nullptr) const;
   static bool parse(const std::string &text, std::vector<std::string> &paths, int &active);
 
  private:
@@ -161,6 +162,16 @@ bool write_stamp_pdf(const std::string &path, const std::vector<Point> &sizes, c
 // or A4 portrait/landscape with the image fitted when |a4|).
 bool images_to_pdf(const std::vector<cairo_surface_t *> &images, const std::string &path, bool a4,
                    std::string &error);
+// Whether |path| starts like a PDF ("%PDF-" in its first kilobyte).
+bool looks_like_pdf(const std::string &path);
+// A new document of |pages| empty pages of |width| x |height| points.
+bool blank_pdf(const std::string &path, double width, double height, int pages, std::string &error);
+// The paper of the user's locale (LC_PAPER: A4, or US Letter in the
+// United States, Canada and a few other countries), in points.
+void default_paper(double &width, double &height);
+// A name for a new document in |dir| ("Untitled.pdf", then "Untitled
+// 2.pdf" ...) that is neither a file there nor |taken|.
+std::string unused_name(const std::string &dir, const std::string &stem, const std::function<bool(const std::string &)> &taken);
 // One page PDF holding the rendered page with |black| boxes painted over.
 bool rasterize_page_pdf(Document &doc, int page, double dpi, const std::vector<Box> &black,
                         const std::string &path, std::string &error);

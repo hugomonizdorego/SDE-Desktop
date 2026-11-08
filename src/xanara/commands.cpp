@@ -468,9 +468,24 @@ void XanaraWindow::page_operation(const std::string &op, int page, int to) {
     engine_change([&](PdfFile &pdf, std::string &) { return rotate_pages(pdf, {cur}, deg); }, _("Rotate"),
                   _("Pages changed — save to keep the result"), {cur});
   } else if (op == "insert" || op == "append") {
-    std::vector<std::string> files =
-        ask_open_many(op == "insert" ? _("Insert Pages from PDFs") : _("Append PDFs"), _("PDF Documents\t*.{pdf,PDF}"),
-                      dir_of(t->target));
+    // Insert: an empty page (0.2.0 Alpha 4, for new documents above all) or
+    // the pages of other PDFs.
+    int what = 1;
+    if (op == "insert" &&
+        !ask_choice(_("Insert"), _("Insert after this page"), {_("An Empty Page"), _("Pages from Other PDFs…")}, what))
+      return;
+    std::vector<std::string> files;
+    if (what == 0) {
+      std::string blank = temp_path("empty-page"), e;
+      if (!blank_pdf(blank, doc->width(cur), doc->height(cur), 1, e)) {
+        report(_("Insert"), e);
+        return;
+      }
+      files.push_back(blank);
+    } else {
+      files = ask_open_many(op == "insert" ? _("Insert Pages from PDFs") : _("Append PDFs"),
+                            _("PDF Documents\t*.{pdf,PDF}"), dir_of(t->target));
+    }
     if (files.empty()) return;
     int after = op == "append" ? n - 1 : cur;
     if (!engine_change([&](PdfFile &pdf, std::string &e) { return insert_pages(pdf, after, files, e); }, _("Insert"),
@@ -486,6 +501,9 @@ void XanaraWindow::page_operation(const std::string &op, int page, int to) {
   if (tab()) tab()->view->go_to(cur);
 }
 
+// New documents (0.2.0 Alpha 4) open as they are made, untitled, like a
+// new document of an office suite: Save asks where they go. 0.2.0 Alpha
+// 3.1 asked for the file first and showed the result afterwards.
 void XanaraWindow::merge_files() {
   auto files = ask_open_many(_("Choose the PDFs to Merge (in order)"), _("PDF Documents\t*.{pdf,PDF}"),
                              user_dir("DOCUMENTS"));
@@ -493,23 +511,24 @@ void XanaraWindow::merge_files() {
     if (files.size() == 1) toast(_("Choose two or more files to merge"));
     return;
   }
-  std::string out = ask_save(_("Save the Merged PDF As"), files[0], _("Merged.pdf"), _("PDF Documents\t*.pdf"), "pdf");
-  if (out.empty()) return;
   toast(_("Merging…"));
   Fl::flush();
-  std::string error;
+  std::string out = new_document_file("merged"), error;
   if (!xanara::merge_files(files, out, error)) {
+    unlink(out.c_str());
     report(_("Merge"), error);
     return;
   }
-  open_path(out);
-  toast(format(_("Merged %zu files"), files.size()));
+  open_untitled(out, _("Merged"), format(_("Merged %zu files — save the result to keep it"), files.size()));
 }
 
 void XanaraWindow::images_to_pdf_dialog() {
   auto files = ask_open_many(_("Choose Images"), _("Images\t*.{png,PNG,jpg,jpeg,JPG,JPEG,gif,bmp,svg}"),
                              user_dir("PICTURES"));
-  if (files.empty()) return;
+  if (!files.empty()) images_to_new_pdf(files);
+}
+
+void XanaraWindow::images_to_new_pdf(const std::vector<std::string> &files) {
   int fit = 0;
   if (!ask_choice(_("Images to PDF"), _("Page size"), {_("A4, image fitted"), _("Same as each image")}, fit)) return;
   std::vector<cairo_surface_t *> images;
@@ -528,16 +547,22 @@ void XanaraWindow::images_to_pdf_dialog() {
     toast(_("These images could not be read"));
     return;
   }
-  std::string out = ask_save(_("Save the PDF As"), files[0], stem(files[0]) + ".pdf", _("PDF Documents\t*.pdf"), "pdf");
-  std::string error;
-  bool ok = !out.empty() && xanara::images_to_pdf(images, out, fit == 0, error);
+  std::string out = new_document_file("images"), error;
+  bool ok = xanara::images_to_pdf(images, out, fit == 0, error);
+  size_t pages = images.size();
   for (auto *s : images) cairo_surface_destroy(s);
-  if (out.empty()) return;
   if (!ok) {
+    unlink(out.c_str());
     fl_alert("%s", error.c_str());
     return;
   }
-  open_path(out);
+  std::string name = display_name(files[0]);
+  size_t dot = name.rfind('.');
+  if (dot != std::string::npos && dot > 0) name = name.substr(0, dot);
+  open_untitled(out, name,
+                format(ngettext("A new PDF of %zu image — save it to keep it",
+                                "A new PDF of %zu images — save it to keep it", pages),
+                       pages));
 }
 
 // ------------------------------------------------------------------ edit

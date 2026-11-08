@@ -1305,6 +1305,13 @@
    "size": 410000000
   },
   {
+   "ref": "runtime/org.gnome.Platform/x86_64/45",
+   "summary": "GNOME's libraries for Flatpak apps (an app that needed them was removed)",
+   "installed": true,
+   "unused": true,
+   "size": 980000000
+  },
+  {
    "ref": "runtime/org.gnome.Platform/x86_64/47",
    "summary": "GNOME's libraries for Flatpak apps",
    "installed": false,
@@ -1317,6 +1324,14 @@
    "installed": false,
    "download": 330000000,
    "size": 1050000000
+  }
+ ],
+ "snap_revisions": [
+  {
+   "name": "kart-rally",
+   "revision": "40",
+   "version": "2.0",
+   "size": 960000000
   }
  ]
 }

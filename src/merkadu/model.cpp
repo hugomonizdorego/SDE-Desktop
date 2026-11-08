@@ -1210,6 +1210,9 @@ Settings Settings::from(const KeyFile &kf) {
     if (valid_package_name(p)) s.protected_packages.insert(p);
   std::string hide = lower_ascii(kf.get("Snap", "hide-home-folder", "true"));
   s.hidden_snap_folder = !(hide == "false" || hide == "0" || hide == "no");
+  s.merkadu_folder = flag("Folders", "merkadu-folder", s.merkadu_folder);
+  std::string folder = trim(kf.get("Folders", "name"));
+  if (!folder.empty() && folder.find('/') == std::string::npos && folder[0] != '.') s.folder_name = folder;
   std::string url = kf.get("Flatpak", "flathub-url");
   if (starts_with(url, "https://")) s.flathub_url = url;
   // The highlights: Flathub's collections (empty: none) and how often they

@@ -159,6 +159,67 @@ static void test_pid_stat() {
   CHECK(std::string(state_name('Z')) == "Zombie");
 }
 
+// 0.2.0 Alpha 4: the kernel's own threads are told from programs by
+// PF_KTHREAD and described by their names.
+static void test_kernel_threads() {
+  PidStat st;
+  // flags 69238880 = 0x4208060: PF_KTHREAD (0x200000) is set.
+  CHECK(parse_pid_stat("9 (kworker/0:1-events) I 2 0 0 0 -1 69238880 0 0 0 0 0 5 0 0 20 0 1 0 12 0 0 "
+                       "18446744073709551615 0 0 0 0 0 0 0 2147483647 0 0 0 0 17 0 0 0 0 0 0\n", st));
+  CHECK(st.flags == 69238880u);
+  CHECK(is_kernel_thread(st, false));
+  // kthreadd itself (flags 2129984 = 0x208040).
+  CHECK(parse_pid_stat("2 (kthreadd) S 0 0 0 0 -1 2129984 0 0 0 0 0 3 0 0 20 0 1 0 32 0 0 "
+                       "18446744073709551615 0 0 0 0 0 0 0 2147483647 0 1 0 0\n", st));
+  CHECK(is_kernel_thread(st, false));
+  // A program (flags 4194560 = 0x400100): not a kernel thread, even as
+  // a child of pid 2 (its command line says so).
+  CHECK(parse_pid_stat("1234 (bash) S 2 1234 1234 34816 5678 4194560 1500 2000 0 0 120 45 3 1 20 0 1 0 "
+                       "500 22000000 1200 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 17 3 0 0 0 0 0\n", st));
+  CHECK(!is_kernel_thread(st, true));
+  // Without the flag (old kernels): kthreadd's children without a command line.
+  st.flags = 0;
+  st.ppid = 2;
+  CHECK(is_kernel_thread(st, false));
+  CHECK(!is_kernel_thread(st, true));
+
+  // The names of the owner's photo (0.2.0 Alpha 3.1).
+  KernelThread k = describe_kernel_thread("kworker/u17:0+events_unbound");
+  CHECK(std::string(k.role) == "worker thread");
+  CHECK(k.detail == "events_unbound" && k.cpu == -1 && k.area == nullptr);
+  CHECK(std::string(k.help).find("worker of the Linux kernel") != std::string::npos);
+  k = describe_kernel_thread("kworker/0:0H-kblockd");
+  CHECK(std::string(k.role) == "worker thread" && k.cpu == 0 && k.detail == "kblockd");
+  CHECK(k.area && std::string(k.area) == "disks and file systems");
+  k = describe_kernel_thread("kworker/R-rcu_gp");
+  CHECK(std::string(k.role) == "worker thread" && k.detail == "rcu_gp");
+  CHECK(k.area && std::string(k.area) == "memory synchronization (RCU)");
+  k = describe_kernel_thread("kworker/3:2");
+  CHECK(k.cpu == 3 && k.detail.empty());
+  CHECK(std::string(describe_kernel_thread("kthreadd").role) == "starts the kernel's threads");
+  k = describe_kernel_thread("ksoftirqd/0");
+  CHECK(std::string(k.role) == "deferred interrupts" && k.cpu == 0);
+  CHECK(std::string(describe_kernel_thread("rcu_preempt").role) == "memory synchronization (RCU)");
+  CHECK(std::string(describe_kernel_thread("rcu_exp_par_gp_kthread_worker/0").role) ==
+        "memory synchronization (RCU)");
+  k = describe_kernel_thread("migration/1");
+  CHECK(std::string(k.role) == "moves tasks between processors" && k.cpu == 1);
+  CHECK(std::string(describe_kernel_thread("cpuhp/1").role) == "switches processors on and off");
+  CHECK(std::string(describe_kernel_thread("pool_workqueue_release").role) == "worker pools");
+  CHECK(std::string(describe_kernel_thread("kswapd0").role) == "memory management");
+  k = describe_kernel_thread("irq/127-nvme0q1");
+  CHECK(std::string(k.role) == "interrupt handler" && k.detail == "nvme0q1");
+  k = describe_kernel_thread("jbd2/nvme0n1p2-8");
+  CHECK(std::string(k.role) == "disks and file systems" && k.detail == "nvme0n1p2-8");
+  CHECK(std::string(describe_kernel_thread("card1-crtc0").role) == "graphics");
+  CHECK(std::string(describe_kernel_thread("kprobe-optimizer").role) == "kernel thread");
+  // Every thread has a role and a help text.
+  for (const char *name : {"", "x", "kworker/", "irq/", "watchdogd", "kauditd", "psimon", "kdevtmpfs"}) {
+    KernelThread d = describe_kernel_thread(name);
+    CHECK(d.role && *d.role && d.help && *d.help);
+  }
+}
+
 static void test_pid_misc() {
   PidIo io;
   CHECK(parse_pid_io("rchar: 100\nwchar: 200\nsyscr: 1\nsyscw: 2\nread_bytes: 4096\n"
@@ -313,6 +374,7 @@ int main() {
   test_process_cpu();
   test_meminfo();
   test_pid_stat();
+  test_kernel_threads();
   test_pid_misc();
   test_diskstats();
   test_net_dev();

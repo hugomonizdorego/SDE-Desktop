@@ -3,6 +3,7 @@
 //
 // SDE System Monitor: the Processes page (table, grouping, tree, actions).
 #include <FL/Fl_Menu_Item.H>
+#include <FL/Fl_Tooltip.H>
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <dirent.h>
@@ -19,6 +20,7 @@
 
 #include "apps.h"
 #include "buffered_window.h"
+#include "config.h"
 #include "glyphs.h"
 #include "i18n.h"
 #include "icons.h"
@@ -53,9 +55,25 @@ struct Row {
   int group = -1;  // >= 0 for group header rows
   int count = 0;   // processes in the group
   bool app = false;
-  std::string name, icon;
+  bool kernel = false;  // a thread of the Linux kernel: |name| describes it, |detail| is its own name
+  std::string name, icon, detail, role;
   Window window = 0;
 };
+
+// The groups of the list (Row::group).
+enum Group { kApps = 0, kBackground = 1, kSystem = 2, kKernel = 3 };
+
+// "Linux kernel — worker thread" for a kernel thread's name column.
+std::string kernel_title(const KernelThread &k) { return sde::format(_("Linux kernel — %s"), _(k.role)); }
+
+// The help line (and tooltip) of a kernel thread.
+std::string kernel_help(const ProcInfo &p) {
+  KernelThread k = describe_kernel_thread(p.comm);
+  std::string text = p.comm + ": " + _(k.help);
+  if (k.area) text += " " + sde::format(_("This one works for: %s."), _(k.area));
+  if (k.cpu >= 0) text += " " + sde::format(_("It serves processor %d."), k.cpu);
+  return text + " " + _("It is part of Linux and cannot be ended.");
+}
 
 std::string lower_copy(std::string s) {
   for (auto &c : s) c = char(std::tolower((unsigned char)c));
@@ -264,7 +282,9 @@ class ProcessTable : public Fl_Widget {
         cairo_surface_t *icon = nullptr;
         if (!r.icon.empty()) icon = sde::IconLoader::get({r.icon, "application-x-executable"}, int(isz));
         if (!icon && r.window) icon = cached_window_icon(r.window, int(isz));
-        if (icon) {
+        if (r.kernel) {
+          draw_icon(p, Icon::Chip, ix + Sd(1), iy + Sd(1), isz - Sd(2), t.text_dim.alpha(0.8));
+        } else if (icon) {
           p.image(icon, ix, iy, isz);
         } else if (r.app) {
           p.fill_rounded(ix, iy, isz, isz, Sd(5), t.accent.alpha(0.85));
@@ -340,7 +360,10 @@ class ProcessTable : public Fl_Widget {
             v = sde::format("%.1f %%", pi.cpu);
             if (pi.cpu < 0.05) cc = t.text_dim;
             break;
-          case kMemory: v = format_bytes(pi.memory); break;
+          case kMemory:
+            v = format_bytes(pi.memory);
+            if (pi.memory == 0) cc = t.text_dim;  // kernel threads: no memory of their own
+            break;
           case kRead:
             v = pi.read_rate < 0 ? "–" : pi.read_rate < 1 ? "0" : format_rate(pi.read_rate);
             if (pi.read_rate < 1) cc = t.text_dim;
@@ -356,7 +379,19 @@ class ProcessTable : public Fl_Widget {
         }
         sde::text_font(t.font_size, c == kName && r.app);
         int right_pad = c == last_col_ ? S(18) : S(10);
-        sde::draw_text(v, col_x_[c] + inset, ry, col_w_[c] - inset - right_pad, rh, cc, kSpecs[c].align);
+        int cw = col_w_[c] - inset - right_pad;
+        // A kernel thread: its own name, then what it is ("Linux kernel —
+        // worker thread"), dimmed; the tooltip and the help line say more.
+        if (c == kName && r.kernel) v = r.detail;
+        sde::draw_text(v, col_x_[c] + inset, ry, cw, rh, cc, kSpecs[c].align);
+        if (c == kName && r.kernel) {
+          int used = sde::text_width(v) + S(12);
+          sde::text_font(t.font_size - S(1));
+          // "Linux kernel — worker thread", or "worker thread" alone where
+          // the column is narrow (the group says "Linux kernel").
+          const std::string &what = used + sde::text_width(r.name) <= cw ? r.name : r.role;
+          if (used < cw - S(30)) sde::draw_text(what, col_x_[c] + inset + used, ry, cw - used, rh, t.text_dim);
+        }
       }
     }
     if (rows_.empty()) {
@@ -371,11 +406,25 @@ class ProcessTable : public Fl_Widget {
     int hh = header_h(), rh = row_h();
     switch (e) {
       case FL_ENTER: return 1;
-      case FL_LEAVE: set_hover(-1); return 1;
+      case FL_LEAVE:
+        set_hover(-1);
+        tip_.clear();
+        return 1;
       case FL_FOCUS: case FL_UNFOCUS: return 1;
       case FL_MOVE: {
         int ey = Fl::event_y() - y() - hh;
         set_hover(ey >= 0 ? top_ + ey / rh : -1);
+        // Kernel threads explain themselves under the pointer.
+        std::string tip;
+        if (hover_ >= 0 && rows_[hover_].kernel && rows_[hover_].proc >= 0)
+          tip = kernel_help(snap_->procs[rows_[hover_].proc]);
+        if (tip != tip_) {
+          tip_ = tip;
+          int ry = hh + (hover_ - top_) * rh;
+          // FLTK keeps the text's address: leave the old tooltip first.
+          Fl_Tooltip::enter_area(this, 0, 0, 0, 0, nullptr);
+          if (!tip_.empty()) Fl_Tooltip::enter_area(this, 0, ry, w(), rh, tip_.c_str());
+        }
         return 1;
       }
       case FL_MOUSEWHEEL:
@@ -439,6 +488,32 @@ class ProcessTable : public Fl_Widget {
       }
     }
     return Fl_Widget::handle(e);
+  }
+
+  // The rows for the UI test (ProcessesPage::qa_dump): group headers and
+  // processes with their geometry while they are on screen.
+  std::string qa_rows() const {
+    std::string out;
+    int hh = header_h(), rh = row_h(), group = -1;
+    for (int i = 0; i < int(rows_.size()); ++i) {
+      const Row &r = rows_[size_t(i)];
+      bool on_screen = i >= top_ && (i - top_ + 1) * rh <= h() - hh;
+      int ry = on_screen ? y() + hh + (i - top_) * rh : 0;
+      if (r.group >= 0) {
+        group = r.group;
+        out += sde::format("group:%d:%s\t%d\t%d\t%d\t%d\t%d\n", r.group, r.name.c_str(), x(), ry, on_screen ? w() : 0,
+                           on_screen ? rh : 0, r.count);
+        continue;
+      }
+      // The row's box (the six fields every SDE QA dump has), then what it
+      // shows in a line of its own.
+      const ProcInfo &p = snap_->procs[size_t(r.proc)];
+      out += sde::format("row:%d\t%d\t%d\t%d\t%d\t1\t0\n", p.pid, x(), ry, on_screen ? w() : 0, on_screen ? rh : 0);
+      out += sde::format("@row:%d:group=%d,kernel=%d,uid=%d,name=%s\t0\t0\t0\t0\t1\t0\n", p.pid, group,
+                         r.kernel ? 1 : 0, p.uid, r.name.c_str());
+    }
+    out += sde::format("@selected:%d\t0\t0\t0\t0\t1\n", selected_pid_);
+    return out;
   }
 
   void select_pid(int pid) {
@@ -516,6 +591,7 @@ class ProcessTable : public Fl_Widget {
   std::vector<Row> rows_;
   int top_ = 0, hover_ = -1, selected_pid_ = 0, last_col_ = kState;
   bool dragging_ = false;
+  std::string tip_;  // the tooltip of the kernel thread under the pointer
   int col_x_[kColumns] = {}, col_w_[kColumns] = {};
 };
 
@@ -525,49 +601,62 @@ class ProcessesPage : public Page {
  public:
   ProcessesPage(int x, int y, int w, int h, Sampler &sampler)
       : Page(x, y, w, h, _("Processes")), sampler_(sampler) {
-    int ty = y + header_height(), bh = S(36);
-    search_ = new SearchField(x + S(28), ty, S(300), bh, _("Search by name, user, PID or command"));
+    // Your processes (as GNOME's and KDE's monitors start), or everyone's;
+    // the kernel's own threads only on request ([system-monitor] in
+    // sde.conf keeps the choice).
+    sde::Config cfg;
+    cfg.load();
+    all_ = cfg.get("system-monitor", "processes", "mine") == "all";
+    int bh = S(36);
+    mine_ = new Chip(x, y, S(100), S(34), _("My processes"));
+    all_chip_ = new Chip(x, y, S(100), S(34), _("All processes"));
+    mine_->tooltip(_("Your apps and the programs and services that run as you"));
+    all_chip_->tooltip(_("Also the system's services and the programs of other users"));
+    mine_->value(!all_);
+    all_chip_->value(all_);
+    mine_->callback([](Fl_Widget *, void *d) { static_cast<ProcessesPage *>(d)->set_all(false); }, this);
+    all_chip_->callback([](Fl_Widget *, void *d) { static_cast<ProcessesPage *>(d)->set_all(true); }, this);
+    search_ = new SearchField(x, y, S(300), bh, _("Search processes"));
+    search_->tooltip(_("Search by name, user, PID or command"));
     search_->input()->callback([](Fl_Widget *, void *d) { static_cast<ProcessesPage *>(d)->rebuild(); }, this);
-    tree_ = new Chip(x + S(340), ty, S(120), bh, _("Tree view"));
+    tree_ = new Chip(x, y, S(120), bh, _("Tree view"));
     tree_->callback([](Fl_Widget *, void *d) { static_cast<ProcessesPage *>(d)->rebuild(); }, this);
-    int bx = x + w - S(28);
-    end_ = new sde::FlatButton(bx - S(120), ty, S(120), bh, _("End Task"), true);
-    bx -= S(130);
-    props_ = new sde::FlatButton(bx - S(112), ty, S(112), bh, _("Properties"));
-    bx -= S(122);
-    more_ = new sde::FlatButton(bx - S(104), ty, S(104), bh, _("Actions…"));
+    kernel_ = new Chip(x, y, S(160), bh, _("Show kernel threads"));
+    kernel_->tooltip(_("The Linux kernel's own threads (kworker, ksoftirqd, rcu_…): part of the system, they cannot "
+                       "be ended"));
+    kernel_->value(cfg.get_bool("system-monitor", "kernel-threads", false));
+    kernel_->callback([](Fl_Widget *, void *d) {
+      auto *self = static_cast<ProcessesPage *>(d);
+      self->save_view();
+      self->rebuild();
+    }, this);
+    end_ = new sde::FlatButton(x, y, S(120), bh, _("End Task"), true);
+    props_ = new sde::FlatButton(x, y, S(112), bh, _("Properties"));
+    more_ = new sde::FlatButton(x, y, S(104), bh, _("Actions…"));
     end_->callback([](Fl_Widget *, void *d) { static_cast<ProcessesPage *>(d)->signal_selected(SIGTERM); }, this);
     props_->callback([](Fl_Widget *, void *d) { static_cast<ProcessesPage *>(d)->show_properties(); }, this);
     more_->callback([](Fl_Widget *w, void *d) {
       auto *self = static_cast<ProcessesPage *>(d);
       self->context_menu(w->x(), w->y() + w->h());
     }, this);
-    table_ = new ProcessTable(x + S(28), ty + bh + S(14), w - S(56), h - header_height() - bh - S(14) - S(24));
+    table_ = new ProcessTable(x, y, w, h);
     table_->on_select = [this](int) { update_buttons(); };
     table_->on_activate = [this](int) { show_properties(); };
     table_->on_menu = [this](int, int mx, int my) { context_menu(mx, my); };
     table_->on_sort = [this] { rebuild(); };
     table_->on_toggle_group = [this] { rebuild(); };
+    help_ = new TextLine(x, y, w, S(40), -1, false, true);
+    help_->wrap(true);
     resizable(table_);
     end();
+    place(x, y, w, h);
     update_buttons();
     AppIndex::instance().load_async();
   }
 
   void resize(int X, int Y, int W, int H) override {
     Fl_Group::resize(X, Y, W, H);
-    // Keep the toolbar buttons anchored to the right edge.
-    int ty = Y + header_height(), bh = S(36), bx = X + W - S(28);
-    end_->resize(bx - S(120), ty, S(120), bh);
-    bx -= S(130);
-    props_->resize(bx - S(112), ty, S(112), bh);
-    bx -= S(122);
-    more_->resize(bx - S(104), ty, S(104), bh);
-    search_->resize(X + S(28), ty, S(300), bh);
-    search_->input()->resize(X + S(28) + S(34), ty + S(5), S(300) - S(44), bh - S(10));
-    tree_->resize(X + S(340), ty, S(120), bh);
-    table_->resize(X + S(28), ty + bh + S(14), W - S(56), H - header_height() - bh - S(14) - S(24));
-    subtitle_->resize(X + S(28), Y + S(48), W - S(56), S(22));
+    place(X, Y, W, H);
   }
 
   void update(const std::shared_ptr<const Snapshot> &snap, bool visible) override {
@@ -589,26 +678,95 @@ class ProcessesPage : public Page {
   void focus_search() override { search_->input()->take_focus(); }
 
  private:
+  // Chips in the header (the view) and the toolbar, the table and the help
+  // line under it; the search field gives way on narrow windows.
+  void place(int X, int Y, int W, int H) {
+    const sde::Theme &t = sde::active_theme();
+    auto chip_w = [&](const char *text) {
+      sde::text_font(t.font_size, true);
+      return sde::text_width(text) + S(28) + S(16);
+    };
+    int cw_all = chip_w(_("All processes")), cw_mine = chip_w(_("My processes"));
+    int hx = X + W - S(28) - cw_all;
+    all_chip_->resize(hx, Y + S(20), cw_all, S(34));
+    hx -= S(8) + cw_mine;
+    mine_->resize(hx, Y + S(20), cw_mine, S(34));
+    subtitle_->resize(X + S(28), Y + S(48), std::max(S(120), hx - S(16) - X - S(28)), S(22));
+    int ty = Y + header_height(), bh = S(36), bx = X + W - S(28);
+    end_->resize(bx - S(120), ty, S(120), bh);
+    bx -= S(130);
+    props_->resize(bx - S(112), ty, S(112), bh);
+    bx -= S(122);
+    more_->resize(bx - S(104), ty, S(104), bh);
+    bx -= S(104) + S(14);
+    int tw = chip_w(_("Tree view")), kw = chip_w(_("Show kernel threads"));
+    int sw = std::clamp(bx - (X + S(28)) - tw - kw - S(24), S(180), S(300));
+    search_->resize(X + S(28), ty, sw, bh);
+    search_->input()->resize(X + S(28) + S(34), ty + S(5), sw - S(44), bh - S(10));
+    tree_->resize(X + S(28) + sw + S(12), ty, tw, bh);
+    kernel_->resize(X + S(28) + sw + S(12) + tw + S(12), ty, kw, bh);
+    int table_y = ty + bh + S(14), table_h = H - header_height() - bh - S(14) - S(14) - S(48);
+    table_->resize(X + S(28), table_y, W - S(56), table_h);
+    help_->resize(X + S(34), table_y + table_h + S(6), W - S(68), S(42));
+  }
+
+  void set_all(bool all) {
+    all_ = all;
+    mine_->value(!all);
+    all_chip_->value(all);
+    save_view();
+    rebuild();
+  }
+
+  void save_view() {
+    sde::Config cfg;
+    cfg.load();
+    cfg.set("system-monitor", "processes", all_ ? "all" : "mine");
+    cfg.set("system-monitor", "kernel-threads", kernel_->value() ? "true" : "false");
+    cfg.save();
+  }
+
   bool matches(const ProcInfo &p, const std::string &name, const std::string &needle) const {
     if (needle.empty()) return true;
     return lower_copy(name).find(needle) != std::string::npos ||
            lower_copy(p.cmdline).find(needle) != std::string::npos ||
-           lower_copy(p.user).find(needle) != std::string::npos || std::to_string(p.pid) == needle;
+           lower_copy(p.user).find(needle) != std::string::npos || std::to_string(p.pid) == needle ||
+           (p.kernel && lower_copy(p.comm).find(needle) != std::string::npos);
   }
 
   void rebuild() {
     if (!snap_) return;
     const auto &procs = snap_->procs;
     std::string needle = lower_copy(sde::trim(search_->value()));
+    bool kernel = kernel_->value() != 0;
+    int me = int(getuid());
     std::vector<Resolved> info(procs.size());
     std::map<int, int> index;  // pid -> proc index
     for (size_t i = 0; i < procs.size(); ++i) {
       auto w = windows_.find(procs[i].pid);
-      info[i] = resolve_process(procs[i], w == windows_.end() ? nullptr : &w->second);
+      if (procs[i].kernel) {
+        info[i].name = kernel_title(describe_kernel_thread(procs[i].comm));
+      } else {
+        info[i] = resolve_process(procs[i], w == windows_.end() ? nullptr : &w->second);
+      }
       index[procs[i].pid] = int(i);
     }
+    // What the view shows: kernel threads only on request; apps (they are
+    // on this screen) and, in My processes, what runs as you.
+    std::vector<bool> shown(procs.size());
+    int hidden_kernel = 0;
+    for (size_t i = 0; i < procs.size(); ++i) {
+      const ProcInfo &p = procs[i];
+      if (p.kernel) {
+        shown[i] = kernel;
+        if (!kernel) ++hidden_kernel;
+      } else {
+        shown[i] = all_ || info[i].app || p.uid == me;
+      }
+    }
     std::map<int, std::vector<int>> children;
-    for (size_t i = 0; i < procs.size(); ++i) children[procs[i].ppid].push_back(int(i));
+    for (size_t i = 0; i < procs.size(); ++i)
+      if (shown[i]) children[procs[i].ppid].push_back(int(i));
 
     int col = table_->sort_column;
     bool desc = table_->sort_descending;
@@ -642,14 +800,24 @@ class ProcessesPage : public Page {
       r.name = info[i].name;
       r.icon = info[i].icon;
       r.window = info[i].window;
+      r.kernel = procs[i].kernel;
+      if (r.kernel) {
+        r.detail = procs[i].comm;
+        r.role = _(describe_kernel_thread(procs[i].comm).role);
+      }
       return r;
     };
 
     std::vector<Row> rows;
     if (tree_->value() && needle.empty()) {
+      // A process whose parent is not shown starts a tree of its own.
       std::vector<int> roots;
-      for (size_t i = 0; i < procs.size(); ++i)
-        if (!index.count(procs[i].ppid) || procs[i].ppid == procs[i].pid) roots.push_back(int(i));
+      for (size_t i = 0; i < procs.size(); ++i) {
+        if (!shown[i]) continue;
+        auto parent = index.find(procs[i].ppid);
+        if (parent == index.end() || !shown[size_t(parent->second)] || procs[i].ppid == procs[i].pid)
+          roots.push_back(int(i));
+      }
       std::function<void(int, int)> walk = [&](int i, int depth) {
         rows.push_back(make_row(i, std::min(depth, 12)));
         auto it = children.find(procs[i].pid);
@@ -662,12 +830,13 @@ class ProcessesPage : public Page {
       std::sort(roots.begin(), roots.end(), less);
       for (int r : roots) walk(r, 0);
     } else {
-      // Apps first, each with the helper processes it started; the rest is
-      // background work.
-      std::vector<int> apps, background;
+      // Apps first, each with the helper processes it started; then your
+      // background work, the system's (All processes) and the kernel's
+      // threads (Show kernel threads).
+      std::vector<int> apps, background, system, kernel_threads;
       std::vector<bool> used(procs.size(), false);
       for (size_t i = 0; i < procs.size(); ++i)
-        if (info[i].app) apps.push_back(int(i)), used[i] = true;
+        if (shown[i] && info[i].app) apps.push_back(int(i)), used[i] = true;
       std::map<int, std::vector<int>> helpers;
       for (int a : apps) {
         std::vector<int> stack{a};
@@ -684,10 +853,16 @@ class ProcessesPage : public Page {
           }
         }
       }
-      for (size_t i = 0; i < procs.size(); ++i)
-        if (!used[i]) background.push_back(int(i));
+      for (size_t i = 0; i < procs.size(); ++i) {
+        if (used[i] || !shown[i]) continue;
+        if (procs[i].kernel) kernel_threads.push_back(int(i));
+        else if (procs[i].uid == me) background.push_back(int(i));
+        else system.push_back(int(i));
+      }
       std::sort(apps.begin(), apps.end(), less);
       std::sort(background.begin(), background.end(), less);
+      std::sort(system.begin(), system.end(), less);
+      std::sort(kernel_threads.begin(), kernel_threads.end(), less);
       auto group = [&](int id, const char *title, const std::vector<int> &members, bool with_helpers) {
         std::vector<Row> body;
         int count = 0;
@@ -717,23 +892,71 @@ class ProcessesPage : public Page {
         // Tree view while searching: matching processes only, flat.
         std::vector<int> all;
         for (size_t i = 0; i < procs.size(); ++i)
-          if (matches(procs[i], info[i].name, needle)) all.push_back(int(i));
+          if (shown[i] && matches(procs[i], info[i].name, needle)) all.push_back(int(i));
         std::sort(all.begin(), all.end(), less);
         for (int i : all) rows.push_back(make_row(i, 0));
       } else {
-        group(0, _("Apps"), apps, true);
-        group(1, _("Background processes"), background, false);
+        group(kApps, _("Apps"), apps, true);
+        group(kBackground, all_ ? _("Your background processes") : _("Background processes"), background, false);
+        group(kSystem, _("System processes"), system, false);
+        group(kKernel, _("Linux kernel"), kernel_threads, false);
       }
     }
+    hidden_kernel_ = hidden_kernel;
     table_->set_model(snap_, std::move(rows));
     update_buttons();
   }
 
   void update_buttons() {
-    bool any = table_->selected_proc() != nullptr;
+    const ProcInfo *sel = table_->selected_proc();
+    bool any = sel != nullptr, kernel = sel && sel->kernel;
+    // A kernel thread cannot be ended: End Task stays off for it.
     for (Fl_Widget *b : {(Fl_Widget *)end_, (Fl_Widget *)props_, (Fl_Widget *)more_}) {
-      if (any && !b->active()) b->activate(), b->redraw();
-      if (!any && b->active()) b->deactivate(), b->redraw();
+      bool on = any && !(kernel && b == end_);
+      if (on && !b->active()) b->activate(), b->redraw();
+      if (!on && b->active()) b->deactivate(), b->redraw();
+    }
+    end_->tooltip(kernel ? _("Kernel threads are part of Linux and cannot be ended") : nullptr);
+    // The help line: what the selected kernel thread does, else how many
+    // are hidden.
+    std::string help;
+    if (kernel) help = kernel_help(*sel);
+    else if (kernel_->value())
+      help = _("Kernel threads (kworker, ksoftirqd, rcu_…) do the work of Linux itself, such as writing to the "
+               "disks. They are part of the system and cannot be ended.");
+    else if (hidden_kernel_ > 0)
+      help = sde::format(ngettext("%d thread of the Linux kernel is not shown (Show kernel threads).",
+                                  "%d threads of the Linux kernel are not shown (Show kernel threads).",
+                                  hidden_kernel_),
+                         hidden_kernel_);
+    help_->text(help);
+    qa_dump();
+  }
+
+  // UI test hook: with SDE_PANEL_QA_DIR set, System-Monitor.txt lists the
+  // view ("@view:all=0,kernel=0,tree=0,sort=CPU:descending"), the group
+  // headers, each row ("row:PID" with its box, "@row:PID:group=,kernel=,
+  // uid=,name=") and the buttons with their state (name, x, y, w, h,
+  // active, as the other SDE programs do).
+  void qa_dump() {
+    static const char *dir = getenv("SDE_PANEL_QA_DIR");
+    if (!dir || !*dir || !window()) return;
+    auto line = [](const std::string &name, Fl_Widget *w, bool on) {
+      return sde::format("%s\t%d\t%d\t%d\t%d\t%d\n", name.c_str(), w->x(), w->y(), w->w(), w->h(), on ? 1 : 0);
+    };
+    std::string out = sde::format("@view:all=%d,kernel=%d,tree=%d,sort=%s:%s\t0\t0\t0\t0\t1\n", all_ ? 1 : 0,
+                                  kernel_->value() ? 1 : 0, tree_->value() ? 1 : 0, kSpecs[table_->sort_column].title,
+                                  table_->sort_descending ? "descending" : "ascending");
+    out += line("view:mine", mine_, true) + line("view:all", all_chip_, true) + line("kernel-threads", kernel_, true) +
+           line("tree", tree_, true) + line("End Task", end_, end_->active()) +
+           line("Properties", props_, props_->active()) + line("Actions", more_, more_->active());
+    out += sde::format("@help:%s\t0\t0\t0\t0\t1\n", help_->value().c_str());
+    out += table_->qa_rows();
+    std::string path = std::string(dir) + "/System-Monitor.txt";
+    if (FILE *f = fopen((path + ".tmp").c_str(), "w")) {
+      fwrite(out.data(), 1, out.size(), f);
+      fclose(f);
+      rename((path + ".tmp").c_str(), path.c_str());
     }
   }
 
@@ -747,6 +970,7 @@ class ProcessesPage : public Page {
     if (!p) return;
     std::string name = display_name(*p);
     int pid = p->pid;
+    if (p->kernel) return;  // part of Linux: it cannot be ended (the buttons are off)
     if (pid == getpid() && (sig == SIGSTOP)) return;  // would freeze this window
     if (sig == SIGKILL &&
         !fl_choice(_("Kill \"%s\" (PID %d) immediately?\nUnsaved work in it will be lost."), _("Cancel"),
@@ -822,6 +1046,9 @@ class ProcessesPage : public Page {
     const ProcInfo *p = table_->selected_proc();
     if (!p) return;
     bool stopped = p->state == 'T';
+    // Kernel threads: only Properties (they cannot be ended, stopped or
+    // given another priority, and have no program file).
+    int off = p->kernel ? FL_MENU_INACTIVE : 0;
     std::vector<Fl_Menu_Item> items;
     auto add = [&](const char *text, intptr_t id, int flags) {
       Fl_Menu_Item it;
@@ -835,18 +1062,18 @@ class ProcessesPage : public Page {
     };
     auto finish = [&] { add(nullptr, 0, 0); };
     auto radio = [&](bool on) { return FL_MENU_RADIO | (on ? FL_MENU_VALUE : 0); };
-    add(_("End Task"), 1, 0);
-    add(_("Kill"), 2, FL_MENU_DIVIDER);
-    add(_("Stop"), 3, stopped ? FL_MENU_INACTIVE : 0);
-    add(_("Continue"), 4, (stopped ? 0 : FL_MENU_INACTIVE) | FL_MENU_DIVIDER);
-    add(_("Change Priority"), 0, FL_SUBMENU | FL_MENU_DIVIDER);
+    add(_("End Task"), 1, off);
+    add(_("Kill"), 2, off | FL_MENU_DIVIDER);
+    add(_("Stop"), 3, stopped || p->kernel ? FL_MENU_INACTIVE : 0);
+    add(_("Continue"), 4, (stopped && !p->kernel ? 0 : FL_MENU_INACTIVE) | FL_MENU_DIVIDER);
+    add(_("Change Priority"), 0, FL_SUBMENU | FL_MENU_DIVIDER | off);
     add(_("Very high (-20)"), 10, radio(p->nice <= -15));
     add(_("High (-5)"), 11, radio(p->nice > -15 && p->nice < 0));
     add(_("Normal (0)"), 12, radio(p->nice == 0));
     add(_("Low (5)"), 13, radio(p->nice > 0 && p->nice < 15));
     add(_("Very low (19)"), 14, radio(p->nice >= 15));
     finish();
-    add(_("Open File Location"), 20, 0);
+    add(_("Open File Location"), 20, off);
     add(_("Properties"), 21, 0);
     finish();
     sde::set_menu_icon(&items[0], "close");
@@ -874,10 +1101,14 @@ class ProcessesPage : public Page {
   std::shared_ptr<const Snapshot> snap_;
   std::map<int, WindowOwner> windows_;
   int window_scan_ = 0;
+  bool all_ = false;  // All processes (else My processes)
+  int hidden_kernel_ = 0;
+  Chip *mine_, *all_chip_;
   SearchField *search_;
-  Chip *tree_;
+  Chip *tree_, *kernel_;
   sde::FlatButton *end_, *props_, *more_;
   ProcessTable *table_;
+  TextLine *help_;
 };
 
 Page *make_processes_page(int x, int y, int w, int h, Sampler &sampler) {

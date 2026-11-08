@@ -503,8 +503,11 @@ class PropsPanel : public Fl_Widget {
   double scroll_ = 0;
 };
 
-// The Home tab: quick actions and the recent documents as a grid of
-// thumbnails.
+// The Home tab, Xanara's start page (0.2.0 Alpha 4): open a PDF, make a
+// new one (blank, from images or by merging PDFs), the tools that start
+// from a file (merge, split, compress, OCR ...), and the recent documents
+// as a grid of thumbnails. PDFs dropped on it open; dropped images become a
+// new PDF.
 class HomeView : public Fl_Widget {
  public:
   HomeView(XanaraWindow *app, int x, int y, int w, int h);
@@ -512,21 +515,30 @@ class HomeView : public Fl_Widget {
   void draw() override;
   int handle(int event) override;
   void refresh();  // the recent list changed
+  // For the UI test: "home <id> x y w h" for every card that is on screen.
+  std::string qa();
 
  private:
+  enum Kind { Start, Tool, Recent };
   struct Card {
+    Kind kind;
     int x, y, w, h;
-    int action;  // >= 0: recent index; < 0: quick action
+    int index;  // into the start actions, the tools or the recent list
   };
   static void thumb_cb(void *p);
   void build();
+  int card_at(int mx, int my) const;
+  void activate(const Card &c);
   XanaraWindow *app_;
   std::vector<Card> cards_;
   std::map<std::string, cairo_surface_t *> thumbs_;
   std::vector<std::string> pending_;
-  int hover_ = -1000;
+  int hover_ = -1;  // index into cards_
   double scroll_ = 0;
   int content_h_ = 0;
+  int tools_y_ = 0, recent_y_ = 0;  // where the section titles go
+  bool dropping_ = false;           // files are dragged over the page
+  std::string tip_;
 };
 
 // One open document.
@@ -535,8 +547,13 @@ struct DocTab {
   DocView *view = nullptr;
   std::string target;  // the file Save writes to
   bool working_copy = false;  // doc is a temporary copy after page operations
+  // A new document (blank, from images, merged) that was never saved:
+  // |target| is the name proposed for it, Save asks where it goes, and
+  // the session and the recent documents leave it out.
+  bool untitled = false;
+  bool blank = false;  // made empty: closing it unchanged asks nothing
   std::vector<std::string> temps;
-  bool dirty() const { return doc && (doc->modified() || working_copy); }
+  bool dirty() const;
 };
 
 // A clickable spot of the window chrome (tab strip, toolbar, context bar).
@@ -574,6 +591,20 @@ class XanaraWindow : public sde::BufferedWindow {
 
   // Tabs and files.
   bool open_path(const std::string &path, int page = -1);
+  // Shows |file| (a new document Xanara made in its working folder) in a
+  // tab of its own, untitled: Save asks for a place, |name| is proposed.
+  bool open_untitled(const std::string &file, const std::string &name, const std::string &message = "");
+  void new_blank();  // a new empty PDF (Ctrl+N)
+  // A tool of the Home tab: chooses the PDF, opens it and runs |a| on it.
+  // |title| names the tool in the file chooser (the toolbar's label else).
+  void start_tool(Act a, const std::string &title = "");
+  // Files dropped on the window: PDFs open, images become a new PDF.
+  void drop_files(const std::vector<std::string> &paths);
+  // A new untitled PDF of |files| (images), one page each.
+  void images_to_new_pdf(const std::vector<std::string> &files);
+  // Asks what to do with the unsaved changes of tab |index| (it becomes
+  // active): false when the user cancelled, or saving did not work.
+  bool settle_changes(int index);
   void open_dialog();
   void activate_tab(int index);  // -1: Home
   bool close_tab(int index, bool ask = true);  // false: the user cancelled
@@ -636,6 +667,8 @@ class XanaraWindow : public sde::BufferedWindow {
                         const PageLayout *expected, const std::string &message);
   std::string current_source();
   std::string temp_path(const std::string &tag);
+  // A file in the working folder for a new document (no tab owns it yet).
+  std::string new_document_file(const std::string &tag);
   void drop_temps(DocView *v);  // deletes the copies the undo history no longer needs
   bool choose_image();  // for the Image tool
   std::string choose_image_file();
@@ -660,6 +693,10 @@ class XanaraWindow : public sde::BufferedWindow {
   void save_session();
   bool replace_document(DocTab &t, const std::string &path, const std::string &password, bool working, int page,
                         bool keep_view, const std::vector<int> &changed_pages = {});
+  // A new tab for |d|, shown as |target|. An untitled document's tab is
+  // known as "untitled:TARGET": a file of that name opened later is
+  // another document.
+  DocTab *add_tab(std::unique_ptr<Document> d, const std::string &target, bool untitled = false);
   bool layout_edit_bar(int y0, int h);  // the text and picture tools of the Edit mode
   void align_menu(int x, int y);
   void stamp_pages(StampSpec::Kind kind);

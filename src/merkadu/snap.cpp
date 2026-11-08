@@ -25,6 +25,7 @@
 #include "backend.h"
 #include "i18n.h"
 #include "snapd.h"
+#include "storage.h"
 #include "util.h"
 
 namespace sde {
@@ -160,6 +161,34 @@ class SnapBackend : public Backend {
         "the installed snaps arrived");
   }
 
+  // Every revision snapd keeps: the active one of each snap and the old
+  // ones it keeps to go back to (refresh.retain), which Clean Up removes.
+  void storage(StorageFn done) override {
+    using Result = std::pair<std::vector<StorageEntry>, bool>;
+    background<Result>(
+        [] {
+          Result r;
+          HttpResponse resp = http_unix(snapd_socket(), "GET", "/v2/snaps?select=all", "", false, 15000);
+          std::vector<SnapRevision> revs;
+          if (resp.status != 200 || !parse_snap_revisions(resp.body, revs)) return r;
+          r.second = true;
+          for (auto &rev : revs) {
+            StorageEntry e;
+            e.source = Source::Snap;
+            e.id = rev.name;
+            e.name = rev.title;
+            e.kind = rev.active ? "app" : "revision";
+            e.version = rev.version + " (" + rev.revision + ")";
+            e.size = rev.size;
+            e.unused = !rev.active;
+            e.target = rev.active ? rev.name : rev.name + "@" + rev.revision;
+            r.first.push_back(std::move(e));
+          }
+          return r;
+        },
+        [done](Result r) { done(std::move(r.first), r.second); }, "snapd's revisions arrived");
+  }
+
   void search(const std::string &query, AppsFn done) override {
     std::string path = "/v2/find?q=" + url_encode(query);
     background<std::vector<App>>([path] { return get_apps(path, false, nullptr); },
@@ -211,11 +240,19 @@ class SnapBackend : public Backend {
   }
 
   void run(const Job &job, std::function<void(const Progress &)> progress, DoneFn done) override {
-    for (auto &t : job.targets)
-      if (!valid_snap_name(t)) {
+    // "NAME@REVISION": one old revision of a snap (Clean Up), removed alone.
+    for (auto &t : job.targets) {
+      std::string name = t.substr(0, t.find('@'));
+      std::string rev = t.find('@') == std::string::npos ? "" : t.substr(t.find('@') + 1);
+      bool rev_ok = rev.empty() || (job.action == Action::Remove && job.targets.size() == 1 &&
+                                    std::all_of(rev.begin(), rev.end(), [](char c) {
+                                      return (c >= '0' && c <= '9') || c == 'x';
+                                    }));
+      if (!valid_snap_name(name) || !rev_ok) {
         done(false, false, format(_("\"%s\" is not a snap name."), t.c_str()));
         return;
       }
+    }
     auto run = std::make_shared<Running>();
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -237,8 +274,10 @@ class SnapBackend : public Backend {
                                                                                                     : "refresh";
           std::string method = "POST", path, body;
           if (j.targets.size() == 1) {
-            path = "/v2/snaps/" + j.targets[0];
+            std::string name = j.targets[0].substr(0, j.targets[0].find('@'));
+            path = "/v2/snaps/" + name;
             body = "{\"action\":" + json_quote(action);
+            if (name != j.targets[0]) body += ",\"revision\":" + json_quote(j.targets[0].substr(name.size() + 1));
             if (j.action == Action::Install) {
               // The channel of the store result ("latest/stable"); stable by default.
               std::string channel = j.remote.empty() ? "stable" : j.remote;

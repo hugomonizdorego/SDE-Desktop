@@ -18,9 +18,14 @@ changes them. No other program is run.
 .PP
 One window holds several documents in tabs, next to a
 .B Home
-tab with quick actions (open, merge, images to PDF) and the recent documents
-as thumbnails. Tabs are reordered by dragging and closed with their x or the
-middle mouse button.
+tab, the start page Xanara opens on without a file: Open; a new PDF, blank,
+from images or by merging PDFs (it opens at once, untitled, and Save asks
+where it goes); the tools that start from a file (split, extract pages,
+compress, recognize text, edit text, fill and sign, protect, remove a
+password, redact, export as images, watermark, compare), each of which asks
+for the PDF and runs on it; and the recent documents as thumbnails. PDFs
+dropped on the window open; dropped images become a new PDF. Tabs are
+reordered by dragging and closed with their x or the middle mouse button.
 .PP
 The toolbar holds the side panel switch, the pointer (select or hand), the
 zoom and the editing modes
@@ -71,8 +76,8 @@ text and pictures. Also links to web addresses or pages, watermarks,
 background colours, headers and footers, Bates numbers and cropping.
 .TP
 .B Page
-Insert, extract, split, append, rotate, delete and move pages and print page
-numbers.
+Insert empty pages or the pages of other PDFs, extract, split, append,
+rotate, delete and move pages and print page numbers.
 .TP
 .B Form
 Add text fields, check boxes, radio buttons, combo and list boxes, push
@@ -85,7 +90,7 @@ signatures.
 .TP
 .B Convert
 Export pages as PNG or JPEG images, the text as plain text, HTML or Markdown;
-make a PDF from images; merge PDFs.
+make a new PDF from images; merge PDFs into a new one.
 .TP
 .B Protect
 Save a copy protected with a password (AES-256) and permissions; remove a
@@ -127,11 +132,12 @@ Print a short usage summary.
 Every
 .I FILE
 opens in a tab of its own and may also be a file:// URI. Without files the
-tabs of the last session are restored.
+tabs of the last session are restored, and the start page shows when there
+were none.
 .SH KEYS
 .TP
-.B Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+P, Ctrl+W, Ctrl+Q
-Open, save, save a copy, print, close the tab, quit.
+.B Ctrl+O, Ctrl+N, Ctrl+S, Ctrl+Shift+S, Ctrl+P, Ctrl+W, Ctrl+Q
+Open, a new blank PDF, save, save a copy, print, close the tab, quit.
 .TP
 .B Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+Page Down, Ctrl+Page Up
 Next and previous tab (Home included).
@@ -184,7 +190,8 @@ initials,
 Recent documents and the last page and zoom of each.
 .TP
 .I ~/.local/state/sde/xanara\-session
-The tabs of the last session.
+The tabs of the last session (new documents that were never saved are left
+out).
 .TP
 .I ~/.local/state/sde/xanara\-bookmarks
 Bookmarked pages.
