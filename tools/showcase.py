@@ -2642,7 +2642,9 @@ def merkadu_window(s, args, ready):
     s.stop_scene_procs()
     s.gone('^Merkadu$', 3)
     w = s.app(['merkadu'] + args, '^Merkadu$', settle=False)
-    if not s.control('Merkadu', ready, timeout=10):
+    # The package list of All Software takes more than 10 s on a slow CI
+    # machine (0.2.0 Alpha 4); merkadu-ui waits as long.
+    if not s.control('Merkadu', ready, timeout=30):
         raise SkipShot(f'Merkadu did not show {ready} (fake sources: {MERKADU_FIXTURES})')
     s.park_pointer()
     return w
